@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="ClaySharp.csproj" />
+  <Project Path="renderer/sdl3/ClaySharp.Renderer.SDL3.csproj" />
+</Solution>
