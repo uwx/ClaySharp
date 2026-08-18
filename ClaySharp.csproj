@@ -18,6 +18,8 @@
     <None Remove="renderer\**" />
     <Compile Remove="clay\**" />
     <None Remove="clay\**" />
+    <Compile Remove="examples\**" />
+    <None Remove="examples\**" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Remove="renderer\**" />

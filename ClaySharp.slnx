@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="ClaySharp.csproj" />
+  <Project Path="examples/SDL3SimpleDemo/ClaySharp.SDL3SimpleDemo.csproj" />
   <Project Path="renderer/sdl3/ClaySharp.Renderer.SDL3.csproj" />
 </Solution>
