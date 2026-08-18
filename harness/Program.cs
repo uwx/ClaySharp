@@ -226,6 +226,44 @@ Console.WriteLine("== Multi-context ==");
     Check(Clay.GetCurrentContext() == a, "current context restored to a");
 }
 
+Console.WriteLine("== Debug view ==");
+{
+    lastError = null;
+    Clay.Initialize(new Clay_Dimensions(400, 300), errorHandler);
+    Clay.SetMeasureTextFunction(Measure, null);
+
+    // Baseline without the debug overlay.
+    Clay.BeginLayout();
+    using (Clay.Element(Clay.Id("Panel"), new Clay_ElementDeclaration
+    {
+        layout = new Clay_LayoutConfig { layoutDirection = Clay_LayoutDirection.CLAY_TOP_TO_BOTTOM, sizing = new Clay_Sizing { width = Clay.SizingGrow(), height = Clay.SizingGrow() } },
+        backgroundColor = new Clay_Color(40, 40, 40, 255),
+    }))
+    {
+        Clay.Text("Hello", new Clay_TextElementConfig { textColor = new Clay_Color(255, 255, 255, 255), fontSize = 16 });
+        using (Clay.Element(Clay.Id("Child"), new Clay_ElementDeclaration { backgroundColor = new Clay_Color(80, 80, 80, 255) })) { }
+    }
+    int noDebugCount = Clay.EndLayout(0f).length;
+
+    // Same layout with the debug overlay enabled.
+    Clay.SetDebugModeEnabled(true);
+    Clay.BeginLayout();
+    using (Clay.Element(Clay.Id("Panel"), new Clay_ElementDeclaration
+    {
+        layout = new Clay_LayoutConfig { layoutDirection = Clay_LayoutDirection.CLAY_TOP_TO_BOTTOM, sizing = new Clay_Sizing { width = Clay.SizingGrow(), height = Clay.SizingGrow() } },
+        backgroundColor = new Clay_Color(40, 40, 40, 255),
+    }))
+    {
+        Clay.Text("Hello", new Clay_TextElementConfig { textColor = new Clay_Color(255, 255, 255, 255), fontSize = 16 });
+        using (Clay.Element(Clay.Id("Child"), new Clay_ElementDeclaration { backgroundColor = new Clay_Color(80, 80, 80, 255) })) { }
+    }
+    var withDebug = Clay.EndLayout(0f);
+    Clay.SetDebugModeEnabled(false);
+
+    Check(withDebug.length > noDebugCount, "debug view generates extra commands");
+    Check(lastError == null, "debug view produces no errors");
+}
+
 Console.WriteLine();
 Console.WriteLine($"{passed} passed, {failed} failed");
 return failed == 0 ? 0 : 1;

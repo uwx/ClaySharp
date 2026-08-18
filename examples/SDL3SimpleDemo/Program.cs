@@ -134,6 +134,10 @@ internal sealed partial class Game : SDL.IMainCallbacks<Game>
                 {
                     showDemo = !showDemo;
                 }
+                else if (@event.Key.Key == SDL.Keycode.F1)
+                {
+                    Clay.SetDebugModeEnabled(!Clay.IsDebugModeEnabled());
+                }
                 break;
             case SDL.EventType.WindowResized:
                 Clay.SetLayoutDimensions(new Clay_Dimensions(@event.Window.Data1, @event.Window.Data2));

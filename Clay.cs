@@ -13,7 +13,7 @@
 //   * The C macros (CLAY / CLAY_AUTO_ID / CLAY_TEXT / CLAY_ID / CLAY_SIZING_*)
 //     are replaced by the static `Clay` facade: `using (Clay.Element(id, decl)) { }`,
 //     `Clay.AutoId(decl)`, `Clay.Text(text, config)`, `Clay.Id("...")`, etc.
-//   * The self-hosted debug inspector (Clay__RenderDebugView) is not ported yet.
+//   * The self-hosted debug inspector (Clay__RenderDebugView) lives in Clay.DebugView.cs.
 //
 // Licensed under the zlib/libpng license (see bottom of clay.h).
 
@@ -693,6 +693,14 @@ namespace ClaySharp
         public bool hashMapCapacityExceeded;
     }
 
+    // A single warning entry for the debug view's warnings pane. In Clay v0.14 nothing ever adds
+    // warnings, so this array stays empty; kept for parity with the C context layout.
+    internal struct Clay__Warning
+    {
+        public string baseMessage;
+        public string dynamicMessage;
+    }
+
     // A single wrapped line of a text element.
     internal struct Clay__WrappedTextLine
     {
@@ -874,6 +882,7 @@ namespace ClaySharp
         internal bool debugModeEnabled;
         internal bool disableCulling;
         internal bool externalScrollHandlingEnabled;
+        internal bool warningsEnabled;
         internal uint debugSelectedElementId;
         internal uint generation;
         internal object? measureTextUserData;
@@ -905,6 +914,7 @@ namespace ClaySharp
         internal ClayArray<Clay__ScrollContainerDataInternal> scrollContainerDatas;
         internal ClayArray<Clay__TransitionDataInternal> transitionDatas;
         internal ClayArray<bool> treeNodeVisited;
+        internal ClayArray<Clay__Warning> warnings;
 
         // Reports an error through the configured error handler (mirrors the C `context->errorHandler.errorHandlerFunction(...)` calls).
         internal void Error(Clay_ErrorType errorType, string errorText)
@@ -949,6 +959,7 @@ namespace ClaySharp
             openClipElementStack = new ClayArray<int>(maxElementCount);
             reusableElementIndexBuffer = new ClayArray<int>(maxElementCount);
             layoutElementClipElementIds = new ClayArray<int>(maxElementCount);
+            warnings = new ClayArray<Clay__Warning>(100);
         }
     }
 
@@ -1035,7 +1046,7 @@ namespace ClaySharp
     // ENGINE — the static facade + internals ----
     // -----------------------------------------
 
-    public static class Clay
+    public static partial class Clay
     {
         private const float CLAY__MAXFLOAT = 3.40282346638528859812e+38f;
         private const float CLAY__EPSILON = 0.01f;
@@ -1047,7 +1058,7 @@ namespace ClaySharp
         // Default layout config (matches the C `extern Clay_LayoutConfig CLAY_LAYOUT_DEFAULT`).
         public static readonly Clay_LayoutConfig CLAY_LAYOUT_DEFAULT = default;
 
-        // Debug view globals (the inspector itself is not ported yet; these are kept for API parity).
+        // Debug view globals (the inspector itself lives in Clay.DebugView.cs).
         public static uint __debugViewWidth = 400;
         public static Clay_Color __debugViewHighlightColor = new Clay_Color(168, 66, 28, 100);
 
@@ -3336,7 +3347,7 @@ namespace ClaySharp
             Clay_Dimensions rootDimensions = new Clay_Dimensions { width = context.layoutDimensions.width, height = context.layoutDimensions.height };
             if (context.debugModeEnabled)
             {
-                // The debug inspector itself is deferred, but keep the root width reduction for parity with C.
+                // The debug inspector consumes the right-hand strip, so keep the root width reduction for parity with C.
                 rootDimensions.width -= __debugViewWidth;
             }
             context.booleanWarnings = default;
@@ -3793,15 +3804,41 @@ namespace ClaySharp
                         }
                     }
 
-                    // Debug view deferred — no Clay__RenderDebugView() call here.
+                    if (context.debugModeEnabled)
+                    {
+                        context.warningsEnabled = false;
+                        __RenderDebugView();
+                        context.warningsEnabled = true;
+                    }
 
-                    __CalculateFinalLayout(deltaTime, true, true);
+                    if (context.booleanWarnings.maxElementsExceeded)
+                    {
+                        __AddDebugViewElementsExceededError();
+                    }
+                    else
+                    {
+                        __CalculateFinalLayout(deltaTime, true, true);
+                    }
                     // Note: C calls Clay__CloneElementsWithExitTransition() here to persist exiting subtrees in reused
                     // arena memory. In C#, object references already keep `elementThisFrame` alive across frames.
                 }
                 else
                 {
-                    __CalculateFinalLayout(deltaTime, false, true);
+                    if (context.debugModeEnabled)
+                    {
+                        context.warningsEnabled = false;
+                        __RenderDebugView();
+                        context.warningsEnabled = true;
+                    }
+
+                    if (context.booleanWarnings.maxElementsExceeded)
+                    {
+                        __AddDebugViewElementsExceededError();
+                    }
+                    else
+                    {
+                        __CalculateFinalLayout(deltaTime, false, true);
+                    }
                 }
             }
 
