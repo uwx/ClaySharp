@@ -18,7 +18,9 @@
 // Licensed under the zlib/libpng license (see bottom of clay.h).
 
 using System;
+using System.Collections;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Primitives;
 
 // Several fields exist only to mirror clay.h's state (e.g. debug view / external scroll fields that are
@@ -31,42 +33,20 @@ namespace ClaySharp
     // UTILITY STRUCTS -------------------------
     // -----------------------------------------
 
-    public struct Clay_Dimensions
+    public struct Clay_Dimensions(float width, float height)
     {
-        public float width, height;
-
-        public Clay_Dimensions(float width, float height)
-        {
-            this.width = width;
-            this.height = height;
-        }
+        public float width = width, height = height;
     }
 
     // Internally clay conventionally represents colors as 0-255, but interpretation is up to the renderer.
-    public struct Clay_Color
+    public struct Clay_Color(float r, float g, float b, float a)
     {
-        public float r, g, b, a;
-
-        public Clay_Color(float r, float g, float b, float a)
-        {
-            this.r = r;
-            this.g = g;
-            this.b = b;
-            this.a = a;
-        }
+        public float r = r, g = g, b = b, a = a;
     }
 
-    public struct Clay_BoundingBox
+    public struct Clay_BoundingBox(float x, float y, float width, float height)
     {
-        public float x, y, width, height;
-
-        public Clay_BoundingBox(float x, float y, float width, float height)
-        {
-            this.x = x;
-            this.y = y;
-            this.width = width;
-            this.height = height;
-        }
+        public float x = x, y = y, width = width, height = height;
     }
 
     // Primarily created via the Clay.Id() / Clay.Idi() / Clay.IdLocal() helpers.
