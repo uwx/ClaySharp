@@ -46,8 +46,8 @@ public class Game1 : Game
     private static Clay_Dimensions MeasureText(Microsoft.Extensions.Primitives.StringSegment text, Clay_TextElementConfig config, object? userData)
     {
         var fontSystem = (FontSystem)userData!;
-        Vector2 size = fontSystem.GetFont(config.fontSize).MeasureString(text.AsSpan());
-        return new Clay_Dimensions(size.X, size.Y);
+        Bounds bounds = fontSystem.GetFont(config.fontSize).TextBounds(text.AsSpan(), Vector2.Zero);
+        return new Clay_Dimensions(bounds.X2 - bounds.X, bounds.Y2 - bounds.Y);
     }
 
     private static void HandleClayErrors(Clay_ErrorData errorData) => Console.WriteLine(errorData.errorText);
