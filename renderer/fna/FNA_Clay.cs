@@ -17,18 +17,42 @@ namespace ClaySharp.Renderer.FNA;
 /// </summary>
 public class FNA_Clay
 {
+    public interface IFNAFontEffect
+    {
+        public TextStyle textStyle => TextStyle.None;
+        public FontSystemEffect effect => FontSystemEffect.None;
+        public int effectAmount => 0;
+    }
+    
     /// <summary>
     /// Resources the renderer needs. The caller owns these (they are not created by
     /// the renderer) — parity with <c>Clay_SDL3RendererData</c>.
     /// </summary>
-    public struct Clay_FNARendererData
+    public struct Clay_FNARendererData()
     {
         public GraphicsDevice graphicsDevice;
         public SpriteBatch spriteBatch;
-        public FontSystem[] fonts; // indexed by Clay fontId
+        public FontSystem[] fonts = []; // indexed by Clay fontId
+        
+        /// <summary>
+        /// Defines a callback to resolve imageData into a <see cref="Texture2D"/>.
+        /// </summary>
         public Func<object, Texture2D?>? textureResolver;
+        
+        /// <summary>
+        /// Defines a callback to render images if the imageData is not a <see cref="Texture2D"/>.
+        /// </summary>
         public ImageRenderHandler? imageRenderer;
+        
+        /// <summary>
+        /// Defines a callback to render custom elements.
+        /// </summary>
         public CustomRenderHandler? customRenderer;
+        
+        /// <summary>
+        /// Defines a custom handler to get a font by <see cref="Clay_TextRenderData"/> and text userdata instead of
+        /// fontId.
+        /// </summary>
         public FontGetHandler? fontGetter;
     }
 
@@ -538,11 +562,24 @@ public class FNA_Clay
                         // (e.g. "x", "-") sit below the line-box top. Offset by the tight bounds so the drawn
                         // text aligns with Clay's bounding box.
                         Bounds bounds = font.TextBounds(textSegment, Vector2.Zero);
+
+                        TextStyle textStyle = TextStyle.None;
+                        FontSystemEffect effect = FontSystemEffect.None;
+                        int effectAmount = 0;
+                        if (rcmd.userData is IFNAFontEffect customEffect)
+                        {
+                            textStyle = customEffect.textStyle;
+                            effect = customEffect.effect;
+                            effectAmount = customEffect.effectAmount;
+                        }
                         font.DrawText(
                             rendererData.spriteBatch,
                             textSegment,
                             new Vector2(bb.x - bounds.X, bb.y - bounds.Y),
-                            ToColor(tc.textColor));
+                            ToColor(tc.textColor),
+                            textStyle: textStyle,
+                            effect: effect,
+                            effectAmount: effectAmount);
                     }
 
                     break;
