@@ -26,7 +26,13 @@ public class FNA_Clay
         public GraphicsDevice graphicsDevice;
         public SpriteBatch spriteBatch;
         public FontSystem[] fonts; // indexed by Clay fontId
+        public Func<object, Texture2D?>? textureResolver;
+        public ImageRenderHandler? imageRenderer;
+        public CustomRenderHandler? customRenderer;
     }
+
+    public delegate void ImageRenderHandler(ref Clay_ImageRenderData data);
+    public delegate void CustomRenderHandler(ref Clay_CustomRenderData data);
 
     private const int NUM_CIRCLE_SEGMENTS = 16;
     private const int MAX_CIRCLE_SEGMENTS_FILL = 1024; // caps per-command vertex counts (16-bit indices)
@@ -567,8 +573,36 @@ public class FNA_Clay
                                 FlushGeometry(device, r);
                             }
                         }
+                        else if (ic.imageData is not null)
+                        {
+                            var texture1 = rendererData.textureResolver?.Invoke(ic.imageData);
+                            if (texture1 is not null)
+                            {
+                                if (r.BatchTexture != texture1)
+                                {
+                                    FlushGeometry(device, r);
+                                    r.BatchTexture = texture1;
+                                }
+
+                                AppendRoundedRect(r, bb, ic.cornerRadius, Color.White, true);
+                                if (r.VertexCount >= MAX_BATCH_VERTICES)
+                                {
+                                    FlushGeometry(device, r);
+                                }
+                            }
+                            else
+                            {
+                                rendererData.imageRenderer?.Invoke(ref ic);
+                            }
+                        }
                     }
 
+                    break;
+                
+                case Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_CUSTOM:
+                    CloseTextBatch(rendererData, ref textBatchOpen);
+                    FlushGeometry(device, r);
+                    rendererData.customRenderer?.Invoke(ref rcmd.renderData.custom);
                     break;
 
                 default:
