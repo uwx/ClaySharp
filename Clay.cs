@@ -807,12 +807,12 @@ namespace ClaySharp
     }
 
     // Internal state of a transition element.
-    internal sealed class Clay__TransitionDataInternal
+    internal struct Clay__TransitionDataInternal
     {
         public Clay_TransitionData initialState;
         public Clay_TransitionData currentState;
         public Clay_TransitionData targetState;
-        public Clay_LayoutElement elementThisFrame = null!;
+        public Clay_LayoutElement elementThisFrame;
         public Vector2 oldParentRelativePosition;
         public uint elementId;
         public uint parentId;
@@ -1715,11 +1715,11 @@ namespace ClaySharp
             // Setup data to track transitions across frames.
             if (declaration.transition.handler != null)
             {
-                Clay__TransitionDataInternal? transitionData = null;
+                ref Clay__TransitionDataInternal transitionData = ref Unsafe.NullRef<Clay__TransitionDataInternal>();
                 Clay_LayoutElement parentElement = __GetParentElement();
                 for (int i = 0; i < context.transitionDatas.length; i++)
                 {
-                    Clay__TransitionDataInternal existingData = context.transitionDatas.internalArray[i];
+                    ref Clay__TransitionDataInternal existingData = ref context.transitionDatas.internalArray[i];
                     if (openLayoutElement.id == existingData.elementId)
                     {
                         if (existingData.state == Clay_TransitionState.CLAY_TRANSITION_STATE_EXITING)
@@ -1728,7 +1728,7 @@ namespace ClaySharp
                             Clay_LayoutElementHashMapItem? hashMapItem = __GetHashMapItem(openLayoutElement.id);
                             if (hashMapItem != null) hashMapItem.appearedThisFrame = false;
                         }
-                        transitionData = existingData;
+                        transitionData = ref existingData;
                         transitionData.elementThisFrame = openLayoutElement;
                         if (transitionData.parentId != parentElement.id)
                         {
@@ -1739,17 +1739,16 @@ namespace ClaySharp
                         transitionData.transitionOut = declaration.transition.exit.setFinalState != null;
                     }
                 }
-                if (transitionData == null)
+                if (!Unsafe.IsNullRef(ref transitionData))
                 {
-                    transitionData = new Clay__TransitionDataInternal
+                    transitionData = ref context.transitionDatas.Add(new Clay__TransitionDataInternal
                     {
                         elementThisFrame = openLayoutElement,
                         elementId = openLayoutElement.id,
                         parentId = parentElement.id,
                         siblingIndex = parentElement.children.length,
                         transitionOut = declaration.transition.exit.setFinalState != null,
-                    };
-                    context.transitionDatas.Add(transitionData);
+                    });
                 }
             }
         }
@@ -2674,7 +2673,7 @@ namespace ClaySharp
                             bool found = false;
                             for (int j = 0; j < context.transitionDatas.length; ++j)
                             {
-                                Clay__TransitionDataInternal transitionData = context.transitionDatas.internalArray[j];
+                                ref Clay__TransitionDataInternal transitionData = ref context.transitionDatas.internalArray[j];
                                 if (transitionData.elementId == currentElement.id)
                                 {
                                     found = true;
@@ -3116,7 +3115,7 @@ namespace ClaySharp
                         {
                             for (int I = 0; I < context.transitionDatas.length; ++I)
                             {
-                                Clay__TransitionDataInternal data = context.transitionDatas.internalArray[I];
+                                ref Clay__TransitionDataInternal data = ref context.transitionDatas.internalArray[I];
                                 if (data.elementId == currentElement.id)
                                 {
                                     if (currentElement.config.transition.interactionHandling == Clay_TransitionInteractionHandlingType.CLAY_TRANSITION_DISABLE_INTERACTIONS_WHILE_TRANSITIONING_POSITION)
@@ -3454,7 +3453,7 @@ namespace ClaySharp
             // Prune non exiting transitions.
             for (int i = 0; i < context.transitionDatas.length; ++i)
             {
-                Clay__TransitionDataInternal data = context.transitionDatas.internalArray[i];
+                ref Clay__TransitionDataInternal data = ref context.transitionDatas.internalArray[i];
                 Clay_LayoutElementHashMapItem? hashMapItem = __GetHashMapItem(data.elementId);
                 // Transition element exited and doesn't have an exit handler defined,
                 // or the user deleted the transition handler from one frame to the next.
@@ -3472,7 +3471,7 @@ namespace ClaySharp
 
             for (int i = 0; i < context.transitionDatas.length; ++i)
             {
-                Clay__TransitionDataInternal data = context.transitionDatas.internalArray[i];
+                ref Clay__TransitionDataInternal data = ref context.transitionDatas.internalArray[i];
                 Clay_LayoutElementHashMapItem? hashMapItem = __GetHashMapItem(data.elementId);
                 if (data.transitionOut)
                 {
@@ -3660,7 +3659,7 @@ namespace ClaySharp
 
                     for (int i = 0; i < context.transitionDatas.length; ++i)
                     {
-                        Clay__TransitionDataInternal transitionData = context.transitionDatas.internalArray[i];
+                        ref Clay__TransitionDataInternal transitionData = ref context.transitionDatas.internalArray[i];
                         Clay_LayoutElement currentElement = transitionData.elementThisFrame;
                         Clay_LayoutElementHashMapItem? mapItem = __GetHashMapItem(transitionData.elementId);
                         if (mapItem == null) continue;
