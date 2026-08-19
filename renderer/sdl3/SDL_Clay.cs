@@ -4,26 +4,26 @@ namespace ClaySharp.Renderer.SDL3;
 
 public class SDL_Clay
 {
-    public struct Clay_SDL3RendererData {
-        public nint renderer; // SDL_Renderer
-        public nint textEngine; // TTF_TextEngine
-        public nint[] fonts; // array of TTF_Font
+    public struct Sdl3RendererData {
+        public nint Renderer; // SDL_Renderer
+        public nint TextEngine; // TTF_TextEngine
+        public nint[] Fonts; // array of TTF_Font
     }
 
     /* Global for convenience. Even in 4K this is enough for smooth curves (low radius or rect size coupled with
      * no AA or low resolution might make it appear as jagged curves) */
-    private const int NUM_CIRCLE_SEGMENTS = 16;
+    private const int NumCircleSegments = 16;
 
     //all rendering is performed by a single SDL call, avoiding multiple RenderRect + plumbing choice for circles.
-    private static void SDL_Clay_RenderFillRoundedRect(Clay_SDL3RendererData rendererData, SDL.FRect rect, float cornerRadius, Clay_Color _color) {
-        SDL.FColor color = new SDL.FColor() { R = _color.r/255, G = _color.g/255, B = _color.b/255, A = _color.a/255 };
+    private static void RenderFillRoundedRect(Sdl3RendererData rendererData, SDL.FRect rect, float cornerRadius, Clay.Color _color) {
+        SDL.FColor color = new SDL.FColor() { R = _color.R/255, G = _color.G/255, B = _color.B/255, A = _color.A/255 };
 
         int indexCount = 0, vertexCount = 0;
 
         float minRadius = Math.Min(rect.W, rect.H) / 2.0f;
         float clampedRadius = Math.Min(cornerRadius, minRadius);
 
-        int numCircleSegments = Math.Max(NUM_CIRCLE_SEGMENTS, (int) (clampedRadius * 0.5f));
+        int numCircleSegments = Math.Max(NumCircleSegments, (int) (clampedRadius * 0.5f));
 
         int totalVertices = 4 + (4 * (numCircleSegments * 2)) + 2*4;
         int totalIndices = 6 + (4 * (numCircleSegments * 3)) + 6*4;
@@ -113,16 +113,16 @@ public class SDL_Clay
         indices[indexCount++] = vertexCount - 1; //LT
 
         // Render everything
-        SDL.RenderGeometry(rendererData.renderer, 0, vertices, vertexCount, indices, indexCount);
+        SDL.RenderGeometry(rendererData.Renderer, 0, vertices, vertexCount, indices, indexCount);
     }
 
-    private static void SDL_Clay_RenderArc(Clay_SDL3RendererData rendererData, SDL.FPoint center, float radius, float startAngle, float endAngle, float thickness, Clay_Color color) {
-        SDL.SetRenderDrawColor(rendererData.renderer, (byte)color.r, (byte)color.g, (byte)color.b,(byte) color.a);
+    private static void RenderArc(Sdl3RendererData rendererData, SDL.FPoint center, float radius, float startAngle, float endAngle, float thickness, Clay.Color color) {
+        SDL.SetRenderDrawColor(rendererData.Renderer, (byte)color.R, (byte)color.G, (byte)color.B,(byte) color.A);
 
         float radStart = startAngle * (float.Pi / 180.0f);
         float radEnd = endAngle * (float.Pi / 180.0f);
 
-        int numCircleSegments = Math.Max(NUM_CIRCLE_SEGMENTS, (int)(radius * 1.5f)); //increase circle segments for larger circles, 1.5 is arbitrary.
+        int numCircleSegments = Math.Max(NumCircleSegments, (int)(radius * 1.5f)); //increase circle segments for larger circles, 1.5 is arbitrary.
 
         float angleStep = (radEnd - radStart) / (float)numCircleSegments;
         float thicknessStep = 0.4f; //arbitrary value to avoid overlapping lines. Changing THICKNESS_STEP or numCircleSegments might cause artifacts.
@@ -138,128 +138,128 @@ public class SDL_Clay
                         Y = MathF.Round(center.Y + float.Sin(angle) * clampedRadius)
                 };
             }
-            SDL.RenderLines(rendererData.renderer, points, numCircleSegments + 1);
+            SDL.RenderLines(rendererData.Renderer, points, numCircleSegments + 1);
         }
     }
 
-    private static SDL.Rect currentClippingRectangle;
+    private static SDL.Rect _currentClippingRectangle;
 
-    public static void SDL_Clay_RenderClayCommands(Clay_SDL3RendererData rendererData, Clay_RenderCommandArray rcommands)
+    public static void RenderClayCommands(Sdl3RendererData rendererData, Clay.RenderCommandArray rcommands)
     {
-        for (var i = 0; i < rcommands.length; i++) {
-            ref Clay_RenderCommand rcmd = ref rcommands.Get(i);
-            Clay_BoundingBox bounding_box = rcmd.boundingBox;
-            SDL.FRect rect = new SDL.FRect() { X = (int)bounding_box.x, Y = (int)bounding_box.y, W = (int)bounding_box.width, H = (int)bounding_box.height };
+        for (var i = 0; i < rcommands.Length; i++) {
+            ref Clay.RenderCommand rcmd = ref rcommands.Get(i);
+            Clay.BoundingBox boundingBox = rcmd.BoundingBox;
+            SDL.FRect rect = new SDL.FRect() { X = (int)boundingBox.X, Y = (int)boundingBox.Y, W = (int)boundingBox.Width, H = (int)boundingBox.Height };
 
-            switch (rcmd.commandType) {
-                case Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_RECTANGLE: {
-                    ref Clay_RectangleRenderData config = ref rcmd.renderData.rectangle;
-                    SDL.SetRenderDrawBlendMode(rendererData.renderer, SDL.BlendMode.Blend);
-                    SDL.SetRenderDrawColor(rendererData.renderer, (byte)config.backgroundColor.r, (byte)config.backgroundColor.g, (byte)config.backgroundColor.b, (byte)config.backgroundColor.a);
-                    if (config.cornerRadius.topLeft > 0) {
-                        SDL_Clay_RenderFillRoundedRect(rendererData, rect, config.cornerRadius.topLeft, config.backgroundColor);
+            switch (rcmd.CommandType) {
+                case Clay.RenderCommandType.Rectangle: {
+                    ref Clay.RectangleRenderData config = ref rcmd.RenderData.Rectangle;
+                    SDL.SetRenderDrawBlendMode(rendererData.Renderer, SDL.BlendMode.Blend);
+                    SDL.SetRenderDrawColor(rendererData.Renderer, (byte)config.BackgroundColor.R, (byte)config.BackgroundColor.G, (byte)config.BackgroundColor.B, (byte)config.BackgroundColor.A);
+                    if (config.CornerRadius.TopLeft > 0) {
+                        RenderFillRoundedRect(rendererData, rect, config.CornerRadius.TopLeft, config.BackgroundColor);
                     } else {
-                        SDL.RenderFillRect(rendererData.renderer, rect);
+                        SDL.RenderFillRect(rendererData.Renderer, rect);
                     }
                 } break;
-                case Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_TEXT: {
-                    ref Clay_TextRenderData config = ref rcmd.renderData.text;
-                    nint font = rendererData.fonts[config.fontId];
-                    TTF.SetFontSize(font, config.fontSize);
-                    nint text = TTF.CreateText(rendererData.textEngine, font, config.stringContents.ToString(), (nuint)config.stringContents.Length);
-                    TTF.SetTextColor(text, (byte)config.textColor.r, (byte)config.textColor.g, (byte)config.textColor.b, (byte)config.textColor.a);
+                case Clay.RenderCommandType.Text: {
+                    ref Clay.TextRenderData config = ref rcmd.RenderData.Text;
+                    nint font = rendererData.Fonts[config.FontId];
+                    TTF.SetFontSize(font, config.FontSize);
+                    nint text = TTF.CreateText(rendererData.TextEngine, font, config.StringContents.ToString(), (nuint)config.StringContents.Length);
+                    TTF.SetTextColor(text, (byte)config.TextColor.R, (byte)config.TextColor.G, (byte)config.TextColor.B, (byte)config.TextColor.A);
                     TTF.DrawRendererText(text, rect.X, rect.Y);
                     TTF.DestroyText(text);
                 } break;
-                case Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_BORDER: {
-                    ref Clay_BorderRenderData config = ref rcmd.renderData.border;
+                case Clay.RenderCommandType.Border: {
+                    ref Clay.BorderRenderData config = ref rcmd.RenderData.Border;
 
                     float minRadius = Math.Min(rect.W, rect.H) / 2.0f;
-                    Clay_CornerRadius clampedRadii = new Clay_CornerRadius() {
-                        topLeft = Math.Min(config.cornerRadius.topLeft, minRadius),
-                        topRight = Math.Min(config.cornerRadius.topRight, minRadius),
-                        bottomLeft = Math.Min(config.cornerRadius.bottomLeft, minRadius),
-                        bottomRight = Math.Min(config.cornerRadius.bottomRight, minRadius)
+                    Clay.CornerRadiusValues clampedRadii = new Clay.CornerRadiusValues {
+                        TopLeft = Math.Min(config.CornerRadius.TopLeft, minRadius),
+                        TopRight = Math.Min(config.CornerRadius.TopRight, minRadius),
+                        BottomLeft = Math.Min(config.CornerRadius.BottomLeft, minRadius),
+                        BottomRight = Math.Min(config.CornerRadius.BottomRight, minRadius)
                     };
                     //edges
-                    SDL.SetRenderDrawColor(rendererData.renderer, (byte)config.color.r, (byte)config.color.g, (byte)config.color.b, (byte)config.color.a);
-                    if (config.width.left > 0) {
-                        float starting_y = rect.Y + clampedRadii.topLeft;
-                        float length = rect.H - clampedRadii.topLeft - clampedRadii.bottomLeft;
-                        SDL.FRect line = new SDL.FRect(){ X = rect.X - 1, Y = starting_y, W = config.width.left, H = length };
-                        SDL.RenderFillRect(rendererData.renderer, line);
+                    SDL.SetRenderDrawColor(rendererData.Renderer, (byte)config.Color.R, (byte)config.Color.G, (byte)config.Color.B, (byte)config.Color.A);
+                    if (config.Width.Left > 0) {
+                        float startingY = rect.Y + clampedRadii.TopLeft;
+                        float length = rect.H - clampedRadii.TopLeft - clampedRadii.BottomLeft;
+                        SDL.FRect line = new SDL.FRect(){ X = rect.X - 1, Y = startingY, W = config.Width.Left, H = length };
+                        SDL.RenderFillRect(rendererData.Renderer, line);
                     }
-                    if (config.width.right > 0) {
-                        float starting_x = rect.X + rect.W - (float)config.width.right + 1;
-                        float starting_y = rect.Y + clampedRadii.topRight;
-                        float length = rect.H - clampedRadii.topRight - clampedRadii.bottomRight;
-                        SDL.FRect line = new SDL.FRect() { X = starting_x, Y = starting_y, W = config.width.right, H = length };
-                        SDL.RenderFillRect(rendererData.renderer, line);
+                    if (config.Width.Right > 0) {
+                        float startingX = rect.X + rect.W - (float)config.Width.Right + 1;
+                        float startingY = rect.Y + clampedRadii.TopRight;
+                        float length = rect.H - clampedRadii.TopRight - clampedRadii.BottomRight;
+                        SDL.FRect line = new SDL.FRect() { X = startingX, Y = startingY, W = config.Width.Right, H = length };
+                        SDL.RenderFillRect(rendererData.Renderer, line);
                     }
-                    if (config.width.top > 0) {
-                        float starting_x = rect.X + clampedRadii.topLeft;
-                        float length = rect.W - clampedRadii.topLeft - clampedRadii.topRight;
-                        SDL.FRect line = new SDL.FRect() { X = starting_x, Y = rect.Y - 1, W = length, H = config.width.top };
-                        SDL.RenderFillRect(rendererData.renderer, line);
+                    if (config.Width.Top > 0) {
+                        float startingX = rect.X + clampedRadii.TopLeft;
+                        float length = rect.W - clampedRadii.TopLeft - clampedRadii.TopRight;
+                        SDL.FRect line = new SDL.FRect() { X = startingX, Y = rect.Y - 1, W = length, H = config.Width.Top };
+                        SDL.RenderFillRect(rendererData.Renderer, line);
                     }
-                    if (config.width.bottom > 0) {
-                        float starting_x = rect.X + clampedRadii.bottomLeft;
-                        float starting_y = rect.Y + rect.H - (float)config.width.bottom + 1;
-                        float length = rect.W - clampedRadii.bottomLeft - clampedRadii.bottomRight;
-                        SDL.FRect line = new SDL.FRect() { X = starting_x, Y = starting_y, W = length, H = config.width.bottom };
-                        SDL.SetRenderDrawColor(rendererData.renderer, (byte)config.color.r, (byte)config.color.g, (byte)config.color.b, (byte)config.color.a);
-                        SDL.RenderFillRect(rendererData.renderer, line);
+                    if (config.Width.Bottom > 0) {
+                        float startingX = rect.X + clampedRadii.BottomLeft;
+                        float startingY = rect.Y + rect.H - (float)config.Width.Bottom + 1;
+                        float length = rect.W - clampedRadii.BottomLeft - clampedRadii.BottomRight;
+                        SDL.FRect line = new SDL.FRect() { X = startingX, Y = startingY, W = length, H = config.Width.Bottom };
+                        SDL.SetRenderDrawColor(rendererData.Renderer, (byte)config.Color.R, (byte)config.Color.G, (byte)config.Color.B, (byte)config.Color.A);
+                        SDL.RenderFillRect(rendererData.Renderer, line);
                     }
                     //corners
-                    if (config.cornerRadius.topLeft > 0) {
-                        float centerX = rect.X + clampedRadii.topLeft -1;
-                        float centerY = rect.Y + clampedRadii.topLeft - 1;
-                        SDL_Clay_RenderArc(rendererData, new SDL.FPoint() { X = centerX, Y = centerY }, clampedRadii.topLeft,
-                            180.0f, 270.0f, config.width.top, config.color);
+                    if (config.CornerRadius.TopLeft > 0) {
+                        float centerX = rect.X + clampedRadii.TopLeft -1;
+                        float centerY = rect.Y + clampedRadii.TopLeft - 1;
+                        RenderArc(rendererData, new SDL.FPoint() { X = centerX, Y = centerY }, clampedRadii.TopLeft,
+                            180.0f, 270.0f, config.Width.Top, config.Color);
                     }
-                    if (config.cornerRadius.topRight > 0) {
-                        float centerX = rect.X + rect.W - clampedRadii.topRight;
-                        float centerY = rect.Y + clampedRadii.topRight - 1;
-                        SDL_Clay_RenderArc(rendererData, new SDL.FPoint() { X = centerX, Y = centerY }, clampedRadii.topRight,
-                            270.0f, 360.0f, config.width.top, config.color);
+                    if (config.CornerRadius.TopRight > 0) {
+                        float centerX = rect.X + rect.W - clampedRadii.TopRight;
+                        float centerY = rect.Y + clampedRadii.TopRight - 1;
+                        RenderArc(rendererData, new SDL.FPoint() { X = centerX, Y = centerY }, clampedRadii.TopRight,
+                            270.0f, 360.0f, config.Width.Top, config.Color);
                     }
-                    if (config.cornerRadius.bottomLeft > 0) {
-                        float centerX = rect.X + clampedRadii.bottomLeft -1;
-                        float centerY = rect.Y + rect.H - clampedRadii.bottomLeft;
-                        SDL_Clay_RenderArc(rendererData, new SDL.FPoint() { X = centerX, Y = centerY }, clampedRadii.bottomLeft,
-                            90.0f, 180.0f, config.width.bottom, config.color);
+                    if (config.CornerRadius.BottomLeft > 0) {
+                        float centerX = rect.X + clampedRadii.BottomLeft -1;
+                        float centerY = rect.Y + rect.H - clampedRadii.BottomLeft;
+                        RenderArc(rendererData, new SDL.FPoint() { X = centerX, Y = centerY }, clampedRadii.BottomLeft,
+                            90.0f, 180.0f, config.Width.Bottom, config.Color);
                     }
-                    if (config.cornerRadius.bottomRight > 0) {
-                        float centerX = rect.X + rect.W - clampedRadii.bottomRight;
-                        float centerY = rect.Y + rect.H - clampedRadii.bottomRight;
-                        SDL_Clay_RenderArc(rendererData, new SDL.FPoint() { X = centerX, Y = centerY }, clampedRadii.bottomRight,
-                            0.0f, 90.0f, config.width.bottom, config.color);
+                    if (config.CornerRadius.BottomRight > 0) {
+                        float centerX = rect.X + rect.W - clampedRadii.BottomRight;
+                        float centerY = rect.Y + rect.H - clampedRadii.BottomRight;
+                        RenderArc(rendererData, new SDL.FPoint() { X = centerX, Y = centerY }, clampedRadii.BottomRight,
+                            0.0f, 90.0f, config.Width.Bottom, config.Color);
                     }
 
                 } break;
-                case Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_SCISSOR_START: {
-                    Clay_BoundingBox boundingBox = rcmd.boundingBox;
-                    currentClippingRectangle = new SDL.Rect() {
-                            X = (int)MathF.Round(boundingBox.x),
-                            Y = (int)MathF.Round(boundingBox.y),
-                            W = (int)MathF.Round(boundingBox.width),
-                            H = (int)MathF.Round(boundingBox.height),
+                case Clay.RenderCommandType.ScissorStart: {
+                    Clay.BoundingBox boundingBox1 = rcmd.BoundingBox;
+                    _currentClippingRectangle = new SDL.Rect() {
+                            X = (int)MathF.Round(boundingBox1.X),
+                            Y = (int)MathF.Round(boundingBox1.Y),
+                            W = (int)MathF.Round(boundingBox1.Width),
+                            H = (int)MathF.Round(boundingBox1.Height),
                     };
-                    SDL.SetRenderClipRect(rendererData.renderer, currentClippingRectangle);
+                    SDL.SetRenderClipRect(rendererData.Renderer, _currentClippingRectangle);
                     break;
                 }
-                case Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_SCISSOR_END: {
-                    SDL.SetRenderClipRect(rendererData.renderer, 0);
+                case Clay.RenderCommandType.ScissorEnd: {
+                    SDL.SetRenderClipRect(rendererData.Renderer, 0);
                     break;
                 }
-                case Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_IMAGE: {
-                    nint texture = (nint)rcmd.renderData.image.imageData!;
+                case Clay.RenderCommandType.Image: {
+                    nint texture = (nint)rcmd.RenderData.Image.ImageData!;
                     SDL.FRect dest = new SDL.FRect() { X = rect.X, Y = rect.Y, W = rect.W, H = rect.H };
-                    SDL.RenderTexture(rendererData.renderer, texture, 0, dest);
+                    SDL.RenderTexture(rendererData.Renderer, texture, 0, dest);
                     break;
                 }
                 default:
-                    Console.WriteLine("Unknown render command type: {0}", rcmd.commandType);
+                    Console.WriteLine("Unknown render command type: {0}", rcmd.CommandType);
                     break;
             }
         }

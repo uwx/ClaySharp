@@ -17,7 +17,7 @@ internal sealed partial class Game : SDL.IMainCallbacks<Game>
     private const int FONT_ID = 0;
 
     private nint window;
-    private SDL_Clay.Clay_SDL3RendererData rendererData;
+    private SDL_Clay.Sdl3RendererData rendererData;
     private ClayVideoDemo_Data demoData = null!;
 
     private static nint sampleImage;
@@ -28,46 +28,46 @@ internal sealed partial class Game : SDL.IMainCallbacks<Game>
 
     private static string Resource(string name) => Path.Combine(AppContext.BaseDirectory, "resources", name);
 
-    private static Clay_Dimensions MeasureText(StringSegment text, Clay_TextElementConfig config, object? userData)
+    private static Clay.Dimensions MeasureText(StringSegment text, Clay.TextElementConfig config, object? userData)
     {
         nint[] fonts = (nint[])userData!;
-        nint font = fonts[config.fontId];
-        TTF.SetFontSize(font, config.fontSize);
+        nint font = fonts[config.FontId];
+        TTF.SetFontSize(font, config.FontSize);
         int width = 0, height = 0;
         if (!TTF.GetStringSize(font, text.ToString(), (nuint)text.Length, out width, out height))
         {
             SDL.LogError(SDL.LogCategory.Error, $"Failed to measure text: {SDL.GetError()}");
         }
-        return new Clay_Dimensions(width, height);
+        return new Clay.Dimensions(width, height);
     }
 
-    private static void HandleClayErrors(Clay_ErrorData errorData)
+    private static void HandleClayErrors(Clay.ErrorData errorData)
     {
-        Console.WriteLine(errorData.errorText);
+        Console.WriteLine(errorData.ErrorText);
     }
 
-    private static Clay_RenderCommandArray CreateImageLayout()
+    private static Clay.RenderCommandArray CreateImageLayout()
     {
         Clay.BeginLayout();
 
-        Clay_Sizing layoutExpand = new Clay_Sizing { width = Clay.SizingGrow(0), height = Clay.SizingGrow(0) };
+        Clay.Sizing layoutExpand = new Clay.Sizing { Width = Clay.SizingGrow(0), Height = Clay.SizingGrow(0) };
 
-        using (Clay.Element(Clay.Id("OuterContainer"), new Clay_ElementDeclaration
+        using (Clay.Element(Clay.Id("OuterContainer"), new Clay.ElementDeclaration
         {
-            layout = new Clay_LayoutConfig
+            Layout = new Clay.LayoutConfig
             {
-                layoutDirection = Clay_LayoutDirection.CLAY_TOP_TO_BOTTOM,
-                sizing = layoutExpand,
-                padding = Clay.PaddingAll(16),
-                childGap = 16,
+                LayoutDirection = Clay.LayoutDirection.TopToBottom,
+                Sizing = layoutExpand,
+                Padding = Clay.PaddingAll(16),
+                ChildGap = 16,
             },
         }))
         {
-            using (Clay.Element(Clay.Id("SampleImage"), new Clay_ElementDeclaration
+            using (Clay.Element(Clay.Id("SampleImage"), new Clay.ElementDeclaration
             {
-                layout = new Clay_LayoutConfig { sizing = layoutExpand },
-                aspectRatio = new Clay_AspectRatioElementConfig { aspectRatio = 23.0f / 42.0f },
-                image = new Clay_ImageElementConfig { imageData = sampleImage },
+                Layout = new Clay.LayoutConfig { Sizing = layoutExpand },
+                AspectRatio = new Clay.AspectRatioElementConfig { AspectRatio = 23.0f / 42.0f },
+                Image = new Clay.ImageElementConfig { ImageData = sampleImage },
             })) { }
         }
 
@@ -86,30 +86,30 @@ internal sealed partial class Game : SDL.IMainCallbacks<Game>
         var state = new Game();
         appState = state;
 
-        if (!SDL.CreateWindowAndRenderer("Clay Demo", 640, 480, 0, out state.window, out state.rendererData.renderer))
+        if (!SDL.CreateWindowAndRenderer("Clay Demo", 640, 480, 0, out state.window, out state.rendererData.Renderer))
         {
             SDL.LogError(SDL.LogCategory.Error, $"Failed to create window and renderer: {SDL.GetError()}");
             return SDL.AppResult.Failure;
         }
         SDL.SetWindowResizable(state.window, true);
 
-        state.rendererData.textEngine = TTF.CreateRendererTextEngine(state.rendererData.renderer);
-        if (state.rendererData.textEngine == 0)
+        state.rendererData.TextEngine = TTF.CreateRendererTextEngine(state.rendererData.Renderer);
+        if (state.rendererData.TextEngine == 0)
         {
             SDL.LogError(SDL.LogCategory.Error, $"Failed to create text engine from renderer: {SDL.GetError()}");
             return SDL.AppResult.Failure;
         }
 
-        state.rendererData.fonts = new nint[1];
+        state.rendererData.Fonts = new nint[1];
         nint font = TTF.OpenFont(Resource("Roboto-Regular.ttf"), 24);
         if (font == 0)
         {
             SDL.LogError(SDL.LogCategory.Error, $"Failed to load font: {SDL.GetError()}");
             return SDL.AppResult.Failure;
         }
-        state.rendererData.fonts[FONT_ID] = font;
+        state.rendererData.Fonts[FONT_ID] = font;
 
-        sampleImage = Image.LoadTexture(state.rendererData.renderer, Resource("sample.png"));
+        sampleImage = Image.LoadTexture(state.rendererData.Renderer, Resource("sample.png"));
         if (sampleImage == 0)
         {
             SDL.LogError(SDL.LogCategory.Error, $"Failed to load image: {SDL.GetError()}");
@@ -117,8 +117,8 @@ internal sealed partial class Game : SDL.IMainCallbacks<Game>
         }
 
         SDL.GetWindowSize(state.window, out int width, out int height);
-        Clay.Initialize(new Clay_Dimensions(width, height), new Clay_ErrorHandler { errorHandlerFunction = HandleClayErrors });
-        Clay.SetMeasureTextFunction(MeasureText, state.rendererData.fonts);
+        Clay.Initialize(new Clay.Dimensions(width, height), new Clay.ErrorHandler { ErrorHandlerFunction = HandleClayErrors });
+        Clay.SetMeasureTextFunction(MeasureText, state.rendererData.Fonts);
 
         ClayTextInput.SetPlatform(ClayTextInputSdl3.Platform());
         SDL.StartTextInput(state.window);
@@ -141,7 +141,7 @@ internal sealed partial class Game : SDL.IMainCallbacks<Game>
                 result = SDL.AppResult.Success;
                 break;
             case SDL.EventType.KeyUp:
-                if (@event.Key.Key == SDL.Keycode.Space && !demoData.textInput.focused)
+                if (@event.Key.Key == SDL.Keycode.Space && !demoData.textInput.Focused)
                 {
                     showDemo = !showDemo;
                 }
@@ -151,7 +151,7 @@ internal sealed partial class Game : SDL.IMainCallbacks<Game>
                 }
                 break;
             case SDL.EventType.WindowResized:
-                Clay.SetLayoutDimensions(new Clay_Dimensions(@event.Window.Data1, @event.Window.Data2));
+                Clay.SetLayoutDimensions(new Clay.Dimensions(@event.Window.Data1, @event.Window.Data2));
                 break;
             case SDL.EventType.MouseWheel:
                 Clay.UpdateScrollContainers(true, new Vector2(@event.Wheel.X, @event.Wheel.Y), 0.01f);
@@ -170,16 +170,16 @@ internal sealed partial class Game : SDL.IMainCallbacks<Game>
         ClayTextInput.Update(now - _lastFrameSeconds);
         _lastFrameSeconds = now;
 
-        Clay_RenderCommandArray renderCommands = showDemo
+        Clay.RenderCommandArray renderCommands = showDemo
             ? ClayVideoDemo.CreateLayout(demoData)
             : CreateImageLayout();
 
-        SDL.SetRenderDrawColor(rendererData.renderer, 0, 0, 0, 255);
-        SDL.RenderClear(rendererData.renderer);
+        SDL.SetRenderDrawColor(rendererData.Renderer, 0, 0, 0, 255);
+        SDL.RenderClear(rendererData.Renderer);
 
-        SDL_Clay.SDL_Clay_RenderClayCommands(rendererData, renderCommands);
+        SDL_Clay.RenderClayCommands(rendererData, renderCommands);
 
-        SDL.RenderPresent(rendererData.renderer);
+        SDL.RenderPresent(rendererData.Renderer);
 
         return SDL.AppResult.Continue;
     }
@@ -196,9 +196,9 @@ internal sealed partial class Game : SDL.IMainCallbacks<Game>
             SDL.DestroyTexture(sampleImage);
         }
 
-        if (rendererData.renderer != 0)
+        if (rendererData.Renderer != 0)
         {
-            SDL.DestroyRenderer(rendererData.renderer);
+            SDL.DestroyRenderer(rendererData.Renderer);
         }
 
         if (window != 0)
@@ -206,20 +206,20 @@ internal sealed partial class Game : SDL.IMainCallbacks<Game>
             SDL.DestroyWindow(window);
         }
 
-        if (rendererData.fonts != null)
+        if (rendererData.Fonts != null)
         {
-            for (int i = 0; i < rendererData.fonts.Length; i++)
+            for (int i = 0; i < rendererData.Fonts.Length; i++)
             {
-                if (rendererData.fonts[i] != 0)
+                if (rendererData.Fonts[i] != 0)
                 {
-                    TTF.CloseFont(rendererData.fonts[i]);
+                    TTF.CloseFont(rendererData.Fonts[i]);
                 }
             }
         }
 
-        if (rendererData.textEngine != 0)
+        if (rendererData.TextEngine != 0)
         {
-            TTF.DestroyRendererTextEngine(rendererData.textEngine);
+            TTF.DestroyRendererTextEngine(rendererData.TextEngine);
         }
 
         TTF.Quit();

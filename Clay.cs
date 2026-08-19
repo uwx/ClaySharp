@@ -3,17 +3,17 @@
 //
 // A managed, idiomatic C# port of clay.h (Clay v0.14) that keeps the public API
 // faithful to the original C library. Differences from the C implementation:
-//   * The arena allocator is replaced with managed arrays (no Clay_Arena /
-//     Clay_MinMemorySize / Clay_CreateArenaWithCapacityAndMemory).
-//   * Clay_String is replaced with `string` and Clay_StringSlice with
+//   * The arena allocator is replaced with managed arrays (no Arena /
+//     MinMemorySize / CreateArenaWithCapacityAndMemory).
+//   * String is replaced with `string` and StringSlice with
 //     Microsoft.Extensions.Primitives.StringSegment.
-//   * Clay_Vector2 is System.Numerics.Vector2.
+//   * Vector2 is System.Numerics.Vector2.
 //   * `void*` user data becomes `object?`.
 //   * Hashing is built on System.HashCode (content based, stable within a run).
-//   * The C macros (CLAY / CLAY_AUTO_ID / CLAY_TEXT / CLAY_ID / CLAY_SIZING_*)
+//   * The C macros (CLAY / AUTO_ID / TEXT / ID / SIZING_*)
 //     are replaced by the static `Clay` facade: `using (Clay.Element(id, decl)) { }`,
 //     `Clay.AutoId(decl)`, `Clay.Text(text, config)`, `Clay.Id("...")`, etc.
-//   * The self-hosted debug inspector (Clay__RenderDebugView) lives in Clay.DebugView.cs.
+//   * The self-hosted debug inspector (_RenderDebugView) lives in Clay.DebugView.cs.
 //
 // Licensed under the zlib/libpng license (see bottom of clay.h).
 
@@ -27,74 +27,76 @@ using Microsoft.Extensions.Primitives;
 // written only by not-yet-ported or experimental code paths). They are intentionally left unassigned.
 #pragma warning disable CS0649
 
-namespace ClaySharp
+namespace ClaySharp;
+
+public static partial class Clay
 {
     // -----------------------------------------
     // UTILITY STRUCTS -------------------------
     // -----------------------------------------
 
-    public struct Clay_Dimensions(float width, float height)
+    public struct Dimensions(float width, float height)
     {
-        public float width = width, height = height;
+        public float Width = width, Height = height;
     }
 
     // Internally clay conventionally represents colors as 0-255, but interpretation is up to the renderer.
-    public struct Clay_Color(float r, float g, float b, float a)
+    public struct Color(float r, float g, float b, float a)
     {
-        public float r = r, g = g, b = b, a = a;
+        public float R = r, G = g, B = b, A = a;
     }
 
-    public struct Clay_BoundingBox(float x, float y, float width, float height)
+    public struct BoundingBox(float x, float y, float width, float height)
     {
-        public float x = x, y = y, width = width, height = height;
+        public float X = x, Y = y, Width = width, Height = height;
     }
 
     // Primarily created via the Clay.Id() / Clay.Idi() / Clay.IdLocal() helpers.
     // Represents a hashed string ID used for identifying and finding specific clay UI elements, required
     // by functions such as Clay.PointerOver() and Clay.GetElementData().
-    public struct Clay_ElementId
+    public struct ElementId
     {
-        public uint id;       // The resulting hash generated from the other fields.
-        public uint offset;   // A numerical offset applied after computing the hash from stringId.
-        public uint baseId;   // A base hash value to start from, for example the parent element ID is used when calculating CLAY_ID_LOCAL().
-        public string stringId; // The string id to hash.
+        public uint Id;       // The resulting hash generated from the other fields.
+        public uint Offset;   // A numerical offset applied after computing the hash from stringId.
+        public uint BaseId;   // A base hash value to start from, for example the parent element ID is used when calculating ID_LOCAL().
+        public string StringId; // The string id to hash.
     }
 
-    // A sized array of Clay_ElementId (returned from Clay.GetPointerOverIds()).
-    public readonly struct Clay_ElementIdArray : IReadOnlyList<Clay_ElementId>
+    // A sized array of ElementId (returned from Clay.GetPointerOverIds()).
+    public readonly struct ElementIdArray : IReadOnlyList<ElementId>
     {
-        internal readonly ClayArray<Clay_ElementId> items;
+        internal readonly Array<ElementId> Items;
 
-        internal Clay_ElementIdArray(ClayArray<Clay_ElementId> items)
+        internal ElementIdArray(Array<ElementId> items)
         {
-            this.items = items;
+            Items = items;
         }
 
-        public int capacity => items.capacity;
-        public int length => items.length;
-        public Clay_ElementId[] internalArray => items.internalArray;
-        public Clay_ElementId this[int index] => items.internalArray[index];
+        public int Capacity => Items.Capacity;
+        public int Length => Items.Length;
+        public ElementId[] InternalArray => Items.InternalArray;
+        public ElementId this[int index] => Items.InternalArray[index];
 
-        public IEnumerator<Clay_ElementId> GetEnumerator() => new ClayArrayEnumerator<Clay_ElementId>(items);
+        public IEnumerator<ElementId> GetEnumerator() => new ArrayEnumerator<ElementId>(Items);
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
-        int IReadOnlyCollection<Clay_ElementId>.Count => items.length;
+        int IReadOnlyCollection<ElementId>.Count => Items.Length;
     }
 
-    public struct ClayArrayEnumerator<T> : IEnumerator<T>
+    public struct ArrayEnumerator<T> : IEnumerator<T>
     {
         private int _index = -1;
-        private readonly ClayArray<T> _array;
+        private readonly Array<T> _array;
 
-        internal ClayArrayEnumerator(ClayArray<T> array)
+        internal ArrayEnumerator(Array<T> array)
         {
             _array = array;
         }
 
         public bool MoveNext()
         {
-            return ++_index < _array.length;
+            return ++_index < _array.Length;
         }
 
         public void Reset()
@@ -102,7 +104,7 @@ namespace ClaySharp
             _index = -1;
         }
 
-        public T Current => _array.internalArray[_index];
+        public T Current => _array.InternalArray[_index];
 
         object? IEnumerator.Current => Current;
 
@@ -112,418 +114,418 @@ namespace ClaySharp
     }
 
     // Controls the "radius", or corner rounding of elements, including rectangles, borders and images.
-    public struct Clay_CornerRadius
+    public struct CornerRadiusValues
     {
-        public float topLeft;
-        public float topRight;
-        public float bottomLeft;
-        public float bottomRight;
+        public float TopLeft;
+        public float TopRight;
+        public float BottomLeft;
+        public float BottomRight;
     }
 
     // -----------------------------------------
     // ELEMENT CONFIGS -------------------------
     // -----------------------------------------
 
-    public enum Clay_LayoutDirection
+    public enum LayoutDirection
     {
         // (Default) Lays out child elements from left to right with increasing x.
-        CLAY_LEFT_TO_RIGHT = 0,
+        LeftToRight = 0,
         // Lays out child elements from top to bottom with increasing y.
-        CLAY_TOP_TO_BOTTOM = 1,
+        TopToBottom = 1,
     }
 
-    public enum Clay_LayoutAlignmentX
+    public enum LayoutAlignmentX
     {
         // (Default) Aligns child elements to the left hand side of this element, offset by padding.left
-        CLAY_ALIGN_X_LEFT = 0,
+        Left = 0,
         // Aligns child elements to the right hand side of this element, offset by padding.right
-        CLAY_ALIGN_X_RIGHT = 1,
+        Right = 1,
         // Aligns child elements horizontally to the center of this element
-        CLAY_ALIGN_X_CENTER = 2,
+        Center = 2,
     }
 
-    public enum Clay_LayoutAlignmentY
+    public enum LayoutAlignmentY
     {
         // (Default) Aligns child elements to the top of this element, offset by padding.top
-        CLAY_ALIGN_Y_TOP = 0,
+        Top = 0,
         // Aligns child elements to the bottom of this element, offset by padding.bottom
-        CLAY_ALIGN_Y_BOTTOM = 1,
+        Bottom = 1,
         // Aligns child elements vertically to the center of this element
-        CLAY_ALIGN_Y_CENTER = 2,
+        Center = 2,
     }
 
     // Controls how the element takes up space inside its parent container.
-    public enum Clay__SizingType
+    public enum SizingType
     {
         // (default) Wraps tightly to the size of the element's contents.
-        CLAY__SIZING_TYPE_FIT = 0,
+        Fit = 0,
         // Expands along this axis to fill available space in the parent element, sharing it with other GROW elements.
-        CLAY__SIZING_TYPE_GROW = 1,
+        Grow = 1,
         // Expects 0-1 range. Clamps the axis size to a percent of the parent container's axis size minus padding and child gaps.
-        CLAY__SIZING_TYPE_PERCENT = 2,
+        Percent = 2,
         // Clamps the axis size to an exact size in pixels.
-        CLAY__SIZING_TYPE_FIXED = 3,
+        Fixed = 3,
     }
 
-    public struct Clay_ChildAlignment
+    public struct ChildAlignment
     {
-        public Clay_LayoutAlignmentX x; // Controls alignment of children along the x axis.
-        public Clay_LayoutAlignmentY y; // Controls alignment of children along the y axis.
+        public LayoutAlignmentX X; // Controls alignment of children along the x axis.
+        public LayoutAlignmentY Y; // Controls alignment of children along the y axis.
     }
 
     // Controls the minimum and maximum size in pixels that this element is allowed to grow or shrink to,
     // overriding sizing types such as FIT or GROW.
-    public struct Clay_SizingMinMax
+    public struct SizingMinMax
     {
-        public float min; // The smallest final size of the element on this axis will be this value in pixels.
-        public float max; // The largest final size of the element on this axis will be this value in pixels.
+        public float Min; // The smallest final size of the element on this axis will be this value in pixels.
+        public float Max; // The largest final size of the element on this axis will be this value in pixels.
     }
 
     // Controls the sizing of this element along one axis inside its parent container.
-    public struct Clay_SizingAxis
+    public struct SizingAxis
     {
-        // The C code overlays Clay_SizingMinMax and `float percent` in a union. In C# both fields coexist,
+        // The C code overlays SizingMinMax and `float percent` in a union. In C# both fields coexist,
         // tagged by `type` (only the field relevant to `type` is meaningful).
-        public Clay_SizingMinMax minMax; // min/max size in pixels for FIT / GROW / FIXED sizing.
-        public float percent;             // 0-1 range, only used by CLAY__SIZING_TYPE_PERCENT.
-        public Clay__SizingType type;     // Controls how the element takes up space inside its parent container.
+        public SizingMinMax MinMax; // min/max size in pixels for FIT / GROW / FIXED sizing.
+        public float Percent;             // 0-1 range, only used by PERCENT.
+        public SizingType Type;     // Controls how the element takes up space inside its parent container.
     }
 
-    public struct Clay_Sizing
+    public struct Sizing
     {
-        public Clay_SizingAxis width;  // Controls the width sizing of the element, along the x axis.
-        public Clay_SizingAxis height; // Controls the height sizing of the element, along the y axis.
+        public SizingAxis Width;  // Controls the width sizing of the element, along the x axis.
+        public SizingAxis Height; // Controls the height sizing of the element, along the y axis.
     }
 
-    public struct Clay_Padding
+    public struct Padding
     {
-        public ushort left;
-        public ushort right;
-        public ushort top;
-        public ushort bottom;
+        public ushort Left;
+        public ushort Right;
+        public ushort Top;
+        public ushort Bottom;
     }
 
     // Controls various settings that affect the size and position of an element, as well as the sizes and
     // positions of any child elements.
-    public struct Clay_LayoutConfig
+    public struct LayoutConfig
     {
-        public Clay_Sizing sizing; // FIT / GROW / PERCENT / FIXED sizing inside the parent container.
-        public Clay_Padding padding; // "padding" in pixels, a gap between this element's bounding box and its children.
-        public ushort childGap; // The gap in pixels between child elements along the layout axis.
-        public Clay_ChildAlignment childAlignment; // Controls how child elements are aligned on each axis.
-        public Clay_LayoutDirection layoutDirection; // Controls the direction in which child elements are laid out.
+        public Sizing Sizing; // FIT / GROW / PERCENT / FIXED sizing inside the parent container.
+        public Padding Padding; // "padding" in pixels, a gap between this element's bounding box and its children.
+        public ushort ChildGap; // The gap in pixels between child elements along the layout axis.
+        public ChildAlignment ChildAlignment; // Controls how child elements are aligned on each axis.
+        public LayoutDirection LayoutDirection; // Controls the direction in which child elements are laid out.
     }
 
     // Controls how text "wraps", that is how it is broken into multiple lines when there is insufficient horizontal space.
-    public enum Clay_TextElementConfigWrapMode
+    public enum TextElementConfigWrapMode
     {
         // (default) breaks on whitespace characters.
-        CLAY_TEXT_WRAP_WORDS = 0,
+        Words = 0,
         // Don't break on space characters, only on newlines.
-        CLAY_TEXT_WRAP_NEWLINES = 1,
+        Newlines = 1,
         // Disable text wrapping entirely.
-        CLAY_TEXT_WRAP_NONE = 2,
+        None = 2,
     }
 
     // Controls how wrapped lines of text are horizontally aligned within the outer text bounding box.
-    public enum Clay_TextAlignment
+    public enum TextAlignment
     {
         // (default) Horizontally aligns wrapped lines of text to the left hand side of their bounding box.
-        CLAY_TEXT_ALIGN_LEFT = 0,
+        Left = 0,
         // Horizontally aligns wrapped lines of text to the center of their bounding box.
-        CLAY_TEXT_ALIGN_CENTER = 1,
+        Center = 1,
         // Horizontally aligns wrapped lines of text to the right hand side of their bounding box.
-        CLAY_TEXT_ALIGN_RIGHT = 2,
+        Right = 2,
     }
 
     // Controls various functionality related to text elements.
-    public struct Clay_TextElementConfig
+    public struct TextElementConfig
     {
-        public object? userData; // A pointer that will be transparently passed through to the resulting render command.
-        public Clay_Color textColor; // The RGBA color of the font to render, conventionally specified as 0-255.
-        public ushort fontId; // An integer transparently passed to the measure text function to identify the font to use.
-        public ushort fontSize; // Controls the size of the font.
-        public ushort letterSpacing; // Controls extra horizontal spacing between characters.
-        public ushort lineHeight; // Controls additional vertical space between wrapped lines of text.
-        public Clay_TextElementConfigWrapMode wrapMode; // How text wraps.
-        public Clay_TextAlignment textAlignment; // How wrapped lines are horizontally aligned.
+        public object? UserData; // A pointer that will be transparently passed through to the resulting render command.
+        public Color TextColor; // The RGBA color of the font to render, conventionally specified as 0-255.
+        public ushort FontId; // An integer transparently passed to the measure text function to identify the font to use.
+        public ushort FontSize; // Controls the size of the font.
+        public ushort LetterSpacing; // Controls extra horizontal spacing between characters.
+        public ushort LineHeight; // Controls additional vertical space between wrapped lines of text.
+        public TextElementConfigWrapMode WrapMode; // How text wraps.
+        public TextAlignment TextAlignment; // How wrapped lines are horizontally aligned.
     }
 
     // Controls various settings related to aspect ratio scaling element.
-    public struct Clay_AspectRatioElementConfig
+    public struct AspectRatioElementConfig
     {
-        public float aspectRatio; // The target "aspect ratio", final width divided by final height.
+        public float AspectRatio; // The target "aspect ratio", final width divided by final height.
     }
 
     // Controls various settings related to image elements.
-    public struct Clay_ImageElementConfig
+    public struct ImageElementConfig
     {
-        public object? imageData; // A transparent object used to pass image data through to the renderer.
+        public object? ImageData; // A transparent object used to pass image data through to the renderer.
     }
 
     // Controls where a floating element is offset relative to its parent element.
-    public enum Clay_FloatingAttachPointType
+    public enum FloatingAttachPointType
     {
-        CLAY_ATTACH_POINT_LEFT_TOP = 0,
-        CLAY_ATTACH_POINT_LEFT_CENTER = 1,
-        CLAY_ATTACH_POINT_LEFT_BOTTOM = 2,
-        CLAY_ATTACH_POINT_CENTER_TOP = 3,
-        CLAY_ATTACH_POINT_CENTER_CENTER = 4,
-        CLAY_ATTACH_POINT_CENTER_BOTTOM = 5,
-        CLAY_ATTACH_POINT_RIGHT_TOP = 6,
-        CLAY_ATTACH_POINT_RIGHT_CENTER = 7,
-        CLAY_ATTACH_POINT_RIGHT_BOTTOM = 8,
+        LeftTop = 0,
+        LeftCenter = 1,
+        LeftBottom = 2,
+        CenterTop = 3,
+        CenterCenter = 4,
+        CenterBottom = 5,
+        RightTop = 6,
+        RightCenter = 7,
+        RightBottom = 8,
     }
 
     // Controls where a floating element is offset relative to its parent element.
-    public struct Clay_FloatingAttachPoints
+    public struct FloatingAttachPoints
     {
-        public Clay_FloatingAttachPointType element; // The origin point on a floating element that attaches to its parent.
-        public Clay_FloatingAttachPointType parent;  // The origin point on the parent element that the floating element attaches to.
+        public FloatingAttachPointType Element; // The origin point on a floating element that attaches to its parent.
+        public FloatingAttachPointType Parent;  // The origin point on the parent element that the floating element attaches to.
     }
 
     // Controls how mouse pointer events like hover and click are captured or passed through to elements underneath.
-    public enum Clay_PointerCaptureMode
+    public enum PointerCaptureMode
     {
         // (default) "Capture" the pointer event and don't allow events like hover and click to pass through.
-        CLAY_POINTER_CAPTURE_MODE_CAPTURE = 0,
+        Capture = 0,
         // Transparently pass through pointer events like hover and click to elements underneath the floating element.
-        CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH = 1,
+        Passthrough = 1,
     }
 
     // Controls which element a floating element is "attached" to (i.e. relative offset from).
-    public enum Clay_FloatingAttachToElement
+    public enum FloatingAttachToElement
     {
         // (default) Disables floating for this element.
-        CLAY_ATTACH_TO_NONE = 0,
+        None = 0,
         // Attaches this floating element to its parent.
-        CLAY_ATTACH_TO_PARENT = 1,
+        Parent = 1,
         // Attaches this floating element to an element with a specific ID (.parentId).
-        CLAY_ATTACH_TO_ELEMENT_WITH_ID = 2,
+        ElementWithId = 2,
         // Attaches this floating element to the root of the layout.
-        CLAY_ATTACH_TO_ROOT = 3,
+        Root = 3,
     }
 
     // Controls whether or not a floating element is clipped to the same clipping rectangle as the element it's attached to.
-    public enum Clay_FloatingClipToElement
+    public enum FloatingClipToElement
     {
         // (default) - The floating element does not inherit clipping.
-        CLAY_CLIP_TO_NONE = 0,
+        None = 0,
         // The floating element is clipped to the same clipping rectangle as the element it's attached to.
-        CLAY_CLIP_TO_ATTACHED_PARENT = 1,
+        AttachedParent = 1,
     }
 
     // Controls various settings related to "floating" elements.
-    public struct Clay_FloatingElementConfig
+    public struct FloatingElementConfig
     {
-        public Vector2 offset; // Offsets this floating element by the provided x,y coordinates from its attachPoints.
-        public Clay_Dimensions expand; // Expands the boundaries of the outer floating element without affecting its children.
-        public uint parentId; // For CLAY_ATTACH_TO_ELEMENT_WITH_ID: the element to attach to.
-        public short zIndex; // Controls the z index of this floating element and all its children.
-        public Clay_FloatingAttachPoints attachPoints; // How pointer events are captured / passed through.
-        public Clay_PointerCaptureMode pointerCaptureMode; // How pointer events are captured / passed through.
-        public Clay_FloatingAttachToElement attachTo; // Which element this floating element is attached to.
-        public Clay_FloatingClipToElement clipTo; // Whether this floating element inherits clipping.
+        public Vector2 Offset; // Offsets this floating element by the provided x,y coordinates from its attachPoints.
+        public Dimensions Expand; // Expands the boundaries of the outer floating element without affecting its children.
+        public uint ParentId; // For ELEMENT_WITH_ID: the element to attach to.
+        public short ZIndex; // Controls the z index of this floating element and all its children.
+        public FloatingAttachPoints AttachPoints; // How pointer events are captured / passed through.
+        public PointerCaptureMode PointerCaptureMode; // How pointer events are captured / passed through.
+        public FloatingAttachToElement AttachTo; // Which element this floating element is attached to.
+        public FloatingClipToElement ClipTo; // Whether this floating element inherits clipping.
     }
 
     // Controls various settings related to custom elements.
-    public struct Clay_CustomElementConfig
+    public struct CustomElementConfig
     {
-        public object? customData; // Transparent custom data passed through to the renderer (generates CUSTOM commands).
+        public object? CustomData; // Transparent custom data passed through to the renderer (generates CUSTOM commands).
     }
 
     // Controls the axis on which an element switches to "scrolling", which clips the contents and allows scrolling.
-    public struct Clay_ClipElementConfig
+    public struct ClipElementConfig
     {
-        public bool horizontal; // Clip overflowing elements on the X axis.
-        public bool vertical;   // Clip overflowing elements on the Y axis.
-        public Vector2 childOffset; // Offsets the x,y positions of all child elements (used primarily for scrolling containers).
+        public bool Horizontal; // Clip overflowing elements on the X axis.
+        public bool Vertical;   // Clip overflowing elements on the Y axis.
+        public Vector2 ChildOffset; // Offsets the x,y positions of all child elements (used primarily for scrolling containers).
     }
 
     // Controls the widths of individual element borders.
-    public struct Clay_BorderWidth
+    public struct BorderWidth
     {
-        public ushort left;
-        public ushort right;
-        public ushort top;
-        public ushort bottom;
+        public ushort Left;
+        public ushort Right;
+        public ushort Top;
+        public ushort Bottom;
         // Creates borders between each child element, depending on the layoutDirection.
-        public ushort betweenChildren;
+        public ushort BetweenChildren;
     }
 
     // Controls settings related to element borders.
-    public struct Clay_BorderElementConfig
+    public struct BorderElementConfig
     {
-        public Clay_Color color; // Controls the color of all borders with width > 0.
-        public Clay_BorderWidth width; // Controls the widths of individual borders.
+        public Color Color; // Controls the color of all borders with width > 0.
+        public BorderWidth Width; // Controls the widths of individual borders.
     }
 
-    public struct Clay_TransitionData
+    public struct TransitionData
     {
-        public Clay_BoundingBox boundingBox;
-        public Clay_Color backgroundColor;
-        public Clay_Color overlayColor;
-        public Clay_Color borderColor;
-        public Clay_BorderWidth borderWidth;
+        public BoundingBox BoundingBox;
+        public Color BackgroundColor;
+        public Color OverlayColor;
+        public Color BorderColor;
+        public BorderWidth BorderWidth;
     }
 
-    public enum Clay_TransitionState
+    public enum TransitionState
     {
-        CLAY_TRANSITION_STATE_IDLE = 0,
-        CLAY_TRANSITION_STATE_ENTERING = 1,
-        CLAY_TRANSITION_STATE_TRANSITIONING = 2,
-        CLAY_TRANSITION_STATE_EXITING = 3,
+        Idle = 0,
+        Entering = 1,
+        Transitioning = 2,
+        Exiting = 3,
     }
 
     [Flags]
-    public enum Clay_TransitionProperty
+    public enum TransitionProperty
     {
-        CLAY_TRANSITION_PROPERTY_NONE = 0,
-        CLAY_TRANSITION_PROPERTY_X = 1,
-        CLAY_TRANSITION_PROPERTY_Y = 2,
-        CLAY_TRANSITION_PROPERTY_POSITION = CLAY_TRANSITION_PROPERTY_X | CLAY_TRANSITION_PROPERTY_Y,
-        CLAY_TRANSITION_PROPERTY_WIDTH = 4,
-        CLAY_TRANSITION_PROPERTY_HEIGHT = 8,
-        CLAY_TRANSITION_PROPERTY_DIMENSIONS = CLAY_TRANSITION_PROPERTY_WIDTH | CLAY_TRANSITION_PROPERTY_HEIGHT,
-        CLAY_TRANSITION_PROPERTY_BOUNDING_BOX = CLAY_TRANSITION_PROPERTY_POSITION | CLAY_TRANSITION_PROPERTY_DIMENSIONS,
-        CLAY_TRANSITION_PROPERTY_BACKGROUND_COLOR = 16,
-        CLAY_TRANSITION_PROPERTY_OVERLAY_COLOR = 32,
-        CLAY_TRANSITION_PROPERTY_CORNER_RADIUS = 64,
-        CLAY_TRANSITION_PROPERTY_BORDER_COLOR = 128,
-        CLAY_TRANSITION_PROPERTY_BORDER_WIDTH = 256,
-        CLAY_TRANSITION_PROPERTY_BORDER = CLAY_TRANSITION_PROPERTY_BORDER_COLOR | CLAY_TRANSITION_PROPERTY_BORDER_WIDTH,
+        None = 0,
+        X = 1,
+        Y = 2,
+        Position = X | Y,
+        Width = 4,
+        Height = 8,
+        Dimensions = Width | Height,
+        BoundingBox = Position | Dimensions,
+        BackgroundColor = 16,
+        OverlayColor = 32,
+        CornerRadius = 64,
+        BorderColor = 128,
+        BorderWidth = 256,
+        Border = BorderColor | BorderWidth,
     }
 
-    public ref struct Clay_TransitionCallbackArguments
+    public ref struct TransitionCallbackArguments
     {
-        public Clay_TransitionState transitionState;
-        public Clay_TransitionData initial;
-        public ref Clay_TransitionData current; // Live mutable state — the handler writes interpolated values here.
-        public Clay_TransitionData target;
-        public float elapsedTime;
-        public float duration;
-        public Clay_TransitionProperty properties;
+        public TransitionState TransitionState;
+        public TransitionData Initial;
+        public ref TransitionData Current; // Live mutable state — the handler writes interpolated values here.
+        public TransitionData Target;
+        public float ElapsedTime;
+        public float Duration;
+        public TransitionProperty Properties;
     }
 
-    public enum Clay_TransitionEnterTriggerType
+    public enum TransitionEnterTriggerType
     {
-        CLAY_TRANSITION_ENTER_SKIP_ON_FIRST_PARENT_FRAME = 0,
-        CLAY_TRANSITION_ENTER_TRIGGER_ON_FIRST_PARENT_FRAME = 1,
+        TransitionEnterSkipOnFirstParentFrame = 0,
+        TransitionEnterTriggerOnFirstParentFrame = 1,
     }
 
-    public enum Clay_TransitionExitTriggerType
+    public enum TransitionExitTriggerType
     {
-        CLAY_TRANSITION_EXIT_SKIP_WHEN_PARENT_EXITS = 0,
-        CLAY_TRANSITION_EXIT_TRIGGER_WHEN_PARENT_EXITS = 1,
+        TransitionExitSkipWhenParentExits = 0,
+        TransitionExitTriggerWhenParentExits = 1,
     }
 
-    public enum Clay_TransitionInteractionHandlingType
+    public enum TransitionInteractionHandlingType
     {
-        CLAY_TRANSITION_DISABLE_INTERACTIONS_WHILE_TRANSITIONING_POSITION = 0,
-        CLAY_TRANSITION_ALLOW_INTERACTIONS_WHILE_TRANSITIONING_POSITION = 1,
+        TransitionDisableInteractionsWhileTransitioningPosition = 0,
+        TransitionAllowInteractionsWhileTransitioningPosition = 1,
     }
 
-    public enum Clay_ExitTransitionSiblingOrdering
+    public enum ExitTransitionSiblingOrdering
     {
-        CLAY_EXIT_TRANSITION_ORDERING_UNDERNEATH_SIBLINGS = 0,
-        CLAY_EXIT_TRANSITION_ORDERING_NATURAL_ORDER = 1,
-        CLAY_EXIT_TRANSITION_ORDERING_ABOVE_SIBLINGS = 2,
+        UnderneathSiblings = 0,
+        NaturalOrder = 1,
+        AboveSiblings = 2,
     }
 
-    public struct Clay_TransitionElementConfigEnter
+    public struct TransitionElementConfigEnter
     {
-        public Clay_TransitionSetStateFunction? setInitialState;
-        public Clay_TransitionEnterTriggerType trigger;
+        public TransitionSetStateFunction? SetInitialState;
+        public TransitionEnterTriggerType Trigger;
     }
 
-    public struct Clay_TransitionElementConfigExit
+    public struct TransitionElementConfigExit
     {
-        public Clay_TransitionSetStateFunction? setFinalState;
-        public Clay_TransitionExitTriggerType trigger;
-        public Clay_ExitTransitionSiblingOrdering siblingOrdering;
+        public TransitionSetStateFunction? SetFinalState;
+        public TransitionExitTriggerType Trigger;
+        public ExitTransitionSiblingOrdering SiblingOrdering;
     }
 
     // Controls settings related to transitions.
-    public struct Clay_TransitionElementConfig
+    public struct TransitionElementConfig
     {
-        public Clay_TransitionHandler? handler;
-        public float duration;
-        public Clay_TransitionProperty properties;
-        public Clay_TransitionInteractionHandlingType interactionHandling;
-        public Clay_TransitionElementConfigEnter enter;
-        public Clay_TransitionElementConfigExit exit;
+        public TransitionHandler? Handler;
+        public float Duration;
+        public TransitionProperty Properties;
+        public TransitionInteractionHandlingType InteractionHandling;
+        public TransitionElementConfigEnter Enter;
+        public TransitionElementConfigExit Exit;
     }
 
     // -----------------------------------------
     // RENDER COMMAND DATA ---------------------
     // -----------------------------------------
 
-    // Render command data when commandType == CLAY_RENDER_COMMAND_TYPE_TEXT
-    public struct Clay_TextRenderData
+    // Render command data when commandType == TEXT
+    public struct TextRenderData
     {
-        public StringSegment stringContents; // A string slice containing the text to be rendered.
-        public Clay_Color textColor;
-        public ushort fontId;
-        public ushort fontSize;
-        public ushort letterSpacing; // Extra whitespace gap in pixels between each character.
-        public ushort lineHeight;    // The height of the bounding box for this line of text.
+        public StringSegment StringContents; // A string slice containing the text to be rendered.
+        public Color TextColor;
+        public ushort FontId;
+        public ushort FontSize;
+        public ushort LetterSpacing; // Extra whitespace gap in pixels between each character.
+        public ushort LineHeight;    // The height of the bounding box for this line of text.
     }
 
-    // Render command data when commandType == CLAY_RENDER_COMMAND_TYPE_RECTANGLE
-    public struct Clay_RectangleRenderData
+    // Render command data when commandType == RECTANGLE
+    public struct RectangleRenderData
     {
-        public Clay_Color backgroundColor;
-        public Clay_CornerRadius cornerRadius;
+        public Color BackgroundColor;
+        public CornerRadiusValues CornerRadius;
     }
 
-    // Render command data when commandType == CLAY_RENDER_COMMAND_TYPE_IMAGE
-    public struct Clay_ImageRenderData
+    // Render command data when commandType == IMAGE
+    public struct ImageRenderData
     {
-        public Clay_Color backgroundColor;
-        public Clay_CornerRadius cornerRadius;
-        public object? imageData;
+        public Color BackgroundColor;
+        public CornerRadiusValues CornerRadius;
+        public object? ImageData;
     }
 
-    // Render command data when commandType == CLAY_RENDER_COMMAND_TYPE_CUSTOM
-    public struct Clay_CustomRenderData
+    // Render command data when commandType == CUSTOM
+    public struct CustomRenderData
     {
-        public Clay_Color backgroundColor;
-        public Clay_CornerRadius cornerRadius;
-        public object? customData;
+        public Color BackgroundColor;
+        public CornerRadiusValues CornerRadius;
+        public object? CustomData;
     }
 
-    // Render command data when commandType == CLAY_RENDER_COMMAND_TYPE_SCISSOR_START || SCISSOR_END
-    public struct Clay_ClipRenderData
+    // Render command data when commandType == SCISSOR_START || SCISSOR_END
+    public struct ClipRenderData
     {
-        public bool horizontal;
-        public bool vertical;
+        public bool Horizontal;
+        public bool Vertical;
     }
 
-    // Render command data when commandType == CLAY_RENDER_COMMAND_TYPE_OVERLAY_COLOR_START || OVERLAY_COLOR_END
-    public struct Clay_OverlayColorRenderData
+    // Render command data when commandType == OVERLAY_COLOR_START || OVERLAY_COLOR_END
+    public struct OverlayColorRenderData
     {
-        public Clay_Color color;
+        public Color Color;
     }
 
-    // Render command data when commandType == CLAY_RENDER_COMMAND_TYPE_BORDER
-    public struct Clay_BorderRenderData
+    // Render command data when commandType == BORDER
+    public struct BorderRenderData
     {
-        public Clay_Color color;
-        public Clay_CornerRadius cornerRadius;
-        public Clay_BorderWidth width;
+        public Color Color;
+        public CornerRadiusValues CornerRadius;
+        public BorderWidth Width;
     }
 
     // The C library uses a union here. In C# this is a flat struct holding all render data variants;
-    // only the member matching `Clay_RenderCommand.commandType` is meaningful.
-    public struct Clay_RenderData
+    // only the member matching `RenderCommand.commandType` is meaningful.
+    public struct RenderData
     {
-        public Clay_RectangleRenderData rectangle;
-        public Clay_TextRenderData text;
-        public Clay_ImageRenderData image;
-        public Clay_CustomRenderData custom;
-        public Clay_BorderRenderData border;
-        public Clay_ClipRenderData clip;
-        public Clay_OverlayColorRenderData overlayColor;
+        public RectangleRenderData Rectangle;
+        public TextRenderData Text;
+        public ImageRenderData Image;
+        public CustomRenderData Custom;
+        public BorderRenderData Border;
+        public ClipRenderData Clip;
+        public OverlayColorRenderData OverlayColor;
     }
 
     // -----------------------------------------
@@ -531,512 +533,503 @@ namespace ClaySharp
     // -----------------------------------------
 
     // Data representing the current internal state of a scrolling element.
-    public ref struct Clay_ScrollContainerData
+    public ref struct ScrollContainerData
     {
-        private ref Clay__ScrollContainerDataInternal internalData;
+        private ref ScrollContainerDataInternal _internalData;
 
-        public Vector2 scrollPosition
+        public Vector2 ScrollPosition
         {
             get
             {
-                if (Unsafe.IsNullRef(in internalData)) return default;
-                return internalData.scrollPosition;
+                if (Unsafe.IsNullRef(in _internalData)) return default;
+                return _internalData.ScrollPosition;
             }
             set
             {
-                if (Unsafe.IsNullRef(in internalData)) return;
-                internalData.scrollPosition = value;
+                if (Unsafe.IsNullRef(in _internalData)) return;
+                _internalData.ScrollPosition = value;
             }
         }
 
-        public Clay_Dimensions scrollContainerDimensions; // The bounding box of the scroll element.
-        public Clay_Dimensions contentDimensions; // The outer dimensions of the inner scroll container content.
-        public Clay_ClipElementConfig config; // The config that was originally passed to the clip element.
-        public bool found; // Indicates whether an actual scroll container matched the provided ID.
+        public Dimensions ScrollContainerDimensions; // The bounding box of the scroll element.
+        public Dimensions ContentDimensions; // The outer dimensions of the inner scroll container content.
+        public ClipElementConfig Config; // The config that was originally passed to the clip element.
+        public bool Found; // Indicates whether an actual scroll container matched the provided ID.
 
-        internal static Clay_ScrollContainerData Create(ref Clay__ScrollContainerDataInternal internalData)
+        internal static ScrollContainerData Create(ref ScrollContainerDataInternal internalData)
         {
-            return new Clay_ScrollContainerData
+            return new ScrollContainerData
             {
-                internalData = ref internalData,
-                scrollContainerDimensions = new Clay_Dimensions(internalData.boundingBox.width, internalData.boundingBox.height),
-                contentDimensions = internalData.contentSize,
-                config = internalData.layoutElement.config.clip,
-                found = true,
+                _internalData = ref internalData,
+                ScrollContainerDimensions = new Dimensions(internalData.BoundingBox.Width, internalData.BoundingBox.Height),
+                ContentDimensions = internalData.ContentSize,
+                Config = internalData.LayoutElement.Config.Clip,
+                Found = true,
             };
         }
     }
 
     // Bounding box and other data for a specific UI element.
-    public struct Clay_ElementData
+    public struct ElementData
     {
-        public Clay_BoundingBox boundingBox; // The rectangle that encloses this UI element, relative to the layout root.
-        public bool found; // Indicates whether an actual element matched the provided ID.
+        public BoundingBox BoundingBox; // The rectangle that encloses this UI element, relative to the layout root.
+        public bool Found; // Indicates whether an actual element matched the provided ID.
     }
 
     // Used by renderers to determine specific handling for each render command.
-    public enum Clay_RenderCommandType
+    public enum RenderCommandType
     {
-        CLAY_RENDER_COMMAND_TYPE_NONE = 0,
-        CLAY_RENDER_COMMAND_TYPE_RECTANGLE = 1,
-        CLAY_RENDER_COMMAND_TYPE_BORDER = 2,
-        CLAY_RENDER_COMMAND_TYPE_TEXT = 3,
-        CLAY_RENDER_COMMAND_TYPE_IMAGE = 4,
-        CLAY_RENDER_COMMAND_TYPE_SCISSOR_START = 5,
-        CLAY_RENDER_COMMAND_TYPE_SCISSOR_END = 6,
-        CLAY_RENDER_COMMAND_TYPE_OVERLAY_COLOR_START = 7,
-        CLAY_RENDER_COMMAND_TYPE_OVERLAY_COLOR_END = 8,
-        CLAY_RENDER_COMMAND_TYPE_CUSTOM = 9,
+        None = 0,
+        Rectangle = 1,
+        Border = 2,
+        Text = 3,
+        Image = 4,
+        ScissorStart = 5,
+        ScissorEnd = 6,
+        OverlayColorStart = 7,
+        OverlayColorEnd = 8,
+        Custom = 9,
     }
 
-    public struct Clay_RenderCommand
+    public struct RenderCommand
     {
-        public Clay_BoundingBox boundingBox; // A rectangular box that fully encloses this UI element.
-        public Clay_RenderData renderData; // Data specific to this command's commandType.
-        public object? userData; // Transparently passed through from the original element declaration.
-        public uint id; // The id of this element, transparently passed through from the original element declaration.
-        public short zIndex; // The z order required for drawing this command correctly.
-        public Clay_RenderCommandType commandType; // Specifies how to handle rendering of this command.
+        public BoundingBox BoundingBox; // A rectangular box that fully encloses this UI element.
+        public RenderData RenderData; // Data specific to this command's commandType.
+        public object? UserData; // Transparently passed through from the original element declaration.
+        public uint Id; // The id of this element, transparently passed through from the original element declaration.
+        public short ZIndex; // The z order required for drawing this command correctly.
+        public RenderCommandType CommandType; // Specifies how to handle rendering of this command.
     }
 
     // A sized array of render commands (returned from Clay.EndLayout()).
-    public struct Clay_RenderCommandArray : IReadOnlyList<Clay_RenderCommand>
+    public struct RenderCommandArray : IReadOnlyList<RenderCommand>
     {
-        internal ClayArray<Clay_RenderCommand> items;
+        internal Array<RenderCommand> Items;
 
-        internal Clay_RenderCommandArray(ClayArray<Clay_RenderCommand> items)
+        internal RenderCommandArray(Array<RenderCommand> items)
         {
-            this.items = items;
+            Items = items;
         }
 
-        public int capacity => items.capacity;
-        public int length => items.length;
-        public Clay_RenderCommand[] internalArray => items.internalArray;
-        public Clay_RenderCommand this[int index] => items.internalArray[index];
+        public int Capacity => Items.Capacity;
+        public int Length => Items.Length;
+        public RenderCommand[] InternalArray => Items.InternalArray;
+        public RenderCommand this[int index] => Items.InternalArray[index];
 
-        // Bounds-checked accessor equivalent to the C Clay_RenderCommandArray_Get.
-        public ref Clay_RenderCommand Get(int index) => ref items.Get(index);
+        // Bounds-checked accessor equivalent to the C RenderCommandArray_Get.
+        public ref RenderCommand Get(int index) => ref Items.Get(index);
 
-        public IEnumerator<Clay_RenderCommand> GetEnumerator() => new ClayArrayEnumerator<Clay_RenderCommand>(items);
+        public IEnumerator<RenderCommand> GetEnumerator() => new ArrayEnumerator<RenderCommand>(Items);
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
-        int IReadOnlyCollection<Clay_RenderCommand>.Count => items.length;
+        int IReadOnlyCollection<RenderCommand>.Count => Items.Length;
     }
 
     // Represents the current state of interaction with clay this frame.
-    public enum Clay_PointerDataInteractionState
+    public enum PointerDataInteractionState
     {
         // A left mouse click, or touch occurred this frame.
-        CLAY_POINTER_DATA_PRESSED_THIS_FRAME = 0,
+        PressedThisFrame = 0,
         // The left mouse button click or touch happened in the past, and is still held down this frame.
-        CLAY_POINTER_DATA_PRESSED = 1,
+        Pressed = 1,
         // The left mouse button click or touch was released this frame.
-        CLAY_POINTER_DATA_RELEASED_THIS_FRAME = 2,
+        ReleasedThisFrame = 2,
         // The left mouse button click or touch is not currently down / was released in the past.
-        CLAY_POINTER_DATA_RELEASED = 3,
+        Released = 3,
     }
 
     // Information on the current state of pointer interactions this frame.
-    public struct Clay_PointerData
+    public struct PointerData
     {
-        public Vector2 position; // The position of the mouse / touch / pointer relative to the root of the layout.
-        public Clay_PointerDataInteractionState state; // The current state of interaction with clay this frame.
+        public Vector2 Position; // The position of the mouse / touch / pointer relative to the root of the layout.
+        public PointerDataInteractionState State; // The current state of interaction with clay this frame.
     }
 
-    public struct Clay_ElementDeclaration
+    public struct ElementDeclaration
     {
-        public Clay_LayoutConfig layout; // Controls the size and position of an element and its children.
-        public Clay_Color backgroundColor; // Background color; generates a RECTANGLE render command (or is passed to IMAGE/CUSTOM).
-        public Clay_Color overlayColor; // "Color Overlay" applied to this element and all its children.
-        public Clay_CornerRadius cornerRadius; // Corner rounding of rectangles, borders and images.
-        public Clay_AspectRatioElementConfig aspectRatio; // Aspect ratio scaling.
-        public Clay_ImageElementConfig image; // Image element settings.
-        public Clay_FloatingElementConfig floating; // Floating / absolute positioning settings.
-        public Clay_CustomElementConfig custom; // CUSTOM render command settings.
-        public Clay_ClipElementConfig clip; // Clip / scroll settings.
-        public Clay_BorderElementConfig border; // Border settings.
-        public Clay_TransitionElementConfig transition; // Transition settings.
-        public object? userData; // Transparently passed through to resulting render commands.
+        public LayoutConfig Layout; // Controls the size and position of an element and its children.
+        public Color BackgroundColor; // Background color; generates a RECTANGLE render command (or is passed to IMAGE/CUSTOM).
+        public Color OverlayColor; // "Color Overlay" applied to this element and all its children.
+        public CornerRadiusValues CornerRadius; // Corner rounding of rectangles, borders and images.
+        public AspectRatioElementConfig AspectRatio; // Aspect ratio scaling.
+        public ImageElementConfig Image; // Image element settings.
+        public FloatingElementConfig Floating; // Floating / absolute positioning settings.
+        public CustomElementConfig Custom; // CUSTOM render command settings.
+        public ClipElementConfig Clip; // Clip / scroll settings.
+        public BorderElementConfig Border; // Border settings.
+        public TransitionElementConfig Transition; // Transition settings.
+        public object? UserData; // Transparently passed through to resulting render commands.
     }
 
     // Represents the type of error clay encountered while computing layout.
-    public enum Clay_ErrorType
+    public enum ErrorType
     {
-        CLAY_ERROR_TYPE_TEXT_MEASUREMENT_FUNCTION_NOT_PROVIDED = 0,
-        CLAY_ERROR_TYPE_ARENA_CAPACITY_EXCEEDED = 1,
-        CLAY_ERROR_TYPE_ELEMENTS_CAPACITY_EXCEEDED = 2,
-        CLAY_ERROR_TYPE_TEXT_MEASUREMENT_CAPACITY_EXCEEDED = 3,
-        CLAY_ERROR_TYPE_DUPLICATE_ID = 4,
-        CLAY_ERROR_TYPE_FLOATING_CONTAINER_PARENT_NOT_FOUND = 5,
-        CLAY_ERROR_TYPE_PERCENTAGE_OVER_1 = 6,
-        CLAY_ERROR_TYPE_INTERNAL_ERROR = 7,
-        CLAY_ERROR_TYPE_UNBALANCED_OPEN_CLOSE = 8,
-        CLAY_ERROR_TYPE_HASH_MAP_CAPACITY_EXCEEDED = 9,
+        TextMeasurementFunctionNotProvided = 0,
+        ArenaCapacityExceeded = 1,
+        ElementsCapacityExceeded = 2,
+        TextMeasurementCapacityExceeded = 3,
+        DuplicateId = 4,
+        FloatingContainerParentNotFound = 5,
+        PercentageOver1 = 6,
+        InternalError = 7,
+        UnbalancedOpenClose = 8,
+        HashMapCapacityExceeded = 9,
     }
 
     // Data to identify the error that clay has encountered.
-    public struct Clay_ErrorData
+    public struct ErrorData
     {
-        public Clay_ErrorType errorType; // The type of error encountered.
-        public string errorText; // Human-readable error text.
-        public object? userData; // Transparently passed through from the error handler.
+        public ErrorType ErrorType; // The type of error encountered.
+        public string ErrorText; // Human-readable error text.
+        public object? UserData; // Transparently passed through from the error handler.
     }
 
     // A wrapper struct around Clay's error handler function.
-    public struct Clay_ErrorHandler
+    public struct ErrorHandler
     {
-        public Clay_ErrorHandlerFunction? errorHandlerFunction; // A user provided function called when Clay encounters an error.
-        public object? userData; // Transparently passed through to the error handler when it is called.
+        public ErrorHandlerFunction? ErrorHandlerFunction; // A user provided function called when Clay encounters an error.
+        public object? UserData; // Transparently passed through to the error handler when it is called.
     }
 
     // -----------------------------------------
     // CALLBACK DELEGATES ----------------------
     // -----------------------------------------
 
-    public delegate Clay_Dimensions Clay_MeasureTextFunction(StringSegment text, Clay_TextElementConfig config, object? userData);
-    public delegate void Clay_ErrorHandlerFunction(Clay_ErrorData errorData);
-    public delegate void Clay_OnHoverFunction(Clay_ElementId elementId, Clay_PointerData pointerData, object? userData);
-    public delegate Vector2 Clay_QueryScrollOffsetFunction(uint elementId, object? userData);
-    public delegate bool Clay_TransitionHandler(Clay_TransitionCallbackArguments arguments);
-    public delegate Clay_TransitionData Clay_TransitionSetStateFunction(Clay_TransitionData state, Clay_TransitionProperty properties);
+    public delegate Dimensions MeasureTextFunction(StringSegment text, TextElementConfig config, object? userData);
+    public delegate void ErrorHandlerFunction(ErrorData errorData);
+    public delegate void OnHoverFunction(ElementId elementId, PointerData pointerData, object? userData);
+    public delegate Vector2 QueryScrollOffsetFunction(uint elementId, object? userData);
+    public delegate bool TransitionHandler(TransitionCallbackArguments arguments);
+    public delegate TransitionData TransitionSetStateFunction(TransitionData state, TransitionProperty properties);
 
     // -----------------------------------------
     // INTERNAL TYPES --------------------------
     // -----------------------------------------
 
     // One-shot "already warned" flags per error class.
-    internal struct Clay_BooleanWarnings
+    internal struct BooleanWarnings
     {
-        public bool maxElementsExceeded;
-        public bool maxRenderCommandsExceeded;
-        public bool maxTextMeasureCacheExceeded;
-        public bool textMeasurementFunctionNotSet;
-        public bool hashMapCapacityExceeded;
+        public bool MaxElementsExceeded;
+        public bool MaxRenderCommandsExceeded;
+        public bool MaxTextMeasureCacheExceeded;
+        public bool TextMeasurementFunctionNotSet;
+        public bool HashMapCapacityExceeded;
     }
 
     // A single warning entry for the debug view's warnings pane. In Clay v0.14 nothing ever adds
     // warnings, so this array stays empty; kept for parity with the C context layout.
-    internal struct Clay__Warning
+    internal struct Warning
     {
-        public string baseMessage;
-        public string dynamicMessage;
+        public string BaseMessage;
+        public string DynamicMessage;
     }
 
     // A single wrapped line of a text element.
-    internal struct Clay__WrappedTextLine
+    internal struct WrappedTextLine
     {
-        public Clay_Dimensions dimensions;
-        public StringSegment line; // A slice of the source text (Buffer = full text, Offset = start, Length = line length).
+        public Dimensions Dimensions;
+        public StringSegment Line; // A slice of the source text (Buffer = full text, Offset = start, Length = line length).
     }
 
     // Non-owning view over a region of a shared array. Mirrors the C `Array##Slice` structs.
-    internal struct ClayArraySlice<T>
+    internal struct ArraySlice<T>
     {
-        public int length;
-        public T[] internalArray;
-        public int offset;
+        public int Length;
+        public T[] InternalArray;
+        public int Offset;
 
-        private static T s_default = default!;
+        private static T _sDefault = default!;
 
         public ref T Get(int index)
         {
-            if (Clay.__Array_RangeCheck(index, length)) return ref internalArray[offset + index];
-            return ref s_default;
+            if (__Array_RangeCheck(index, Length)) return ref InternalArray[Offset + index];
+            return ref _sDefault;
         }
     }
 
-    // Layout element data for text elements (the "other half" of Clay_LayoutElement's C union).
-    internal struct Clay__TextElementData
+    // Layout element data for text elements (the "other half" of LayoutElement's C union).
+    internal struct TextElementData
     {
-        public string text;
-        public Clay_Dimensions preferredDimensions;
-        public ClayArraySlice<Clay__WrappedTextLine> wrappedLines;
+        public string Text;
+        public Dimensions PreferredDimensions;
+        public ArraySlice<WrappedTextLine> WrappedLines;
     }
 
-    // In C this holds an `int32_t *elements` pointer into Clay_Context.layoutElementChildren.
-    internal struct Clay__LayoutElementChildren
+    // In C this holds an `int32_t *elements` pointer into Context.layoutElementChildren.
+    internal struct LayoutElementChildren
     {
-        public Clay_LayoutElement[] elements; // The shared layoutElementChildren backing array (element references, not indices).
-        public int offset;     // Start offset within that array.
-        public ushort length;  // Number of children.
+        public LayoutElement[] Elements; // The shared layoutElementChildren backing array (element references, not indices).
+        public int Offset;     // Start offset within that array.
+        public ushort Length;  // Number of children.
     }
 
     // Mutable reference type (the C implementation takes it by pointer everywhere).
-    internal sealed class Clay_LayoutElement
+    internal sealed class LayoutElement
     {
-        public Clay__LayoutElementChildren children;
-        public Clay_Dimensions dimensions;
-        public Clay_Dimensions minDimensions;
+        public LayoutElementChildren Children;
+        public Dimensions Dimensions;
+        public Dimensions MinDimensions;
 
-        // The C union of `Clay_ElementDeclaration config` vs `{ textConfig, textElementData }` becomes two
+        // The C union of `ElementDeclaration config` vs `{ textConfig, textElementData }` becomes two
         // coexisting fields, gated by `isTextElement`.
-        public Clay_ElementDeclaration config;
-        public Clay_TextElementConfig textConfig;
-        public Clay__TextElementData textElementData;
+        public ElementDeclaration Config;
+        public TextElementConfig TextConfig;
+        public TextElementData TextElementData;
 
-        public uint id;
-        public ushort floatingChildrenCount;
-        public bool isTextElement;
-        public bool exiting; // True if the element is in an exit transition ("synthetic" element).
+        public uint Id;
+        public ushort FloatingChildrenCount;
+        public bool IsTextElement;
+        public bool Exiting; // True if the element is in an exit transition ("synthetic" element).
 
-        // Index of this element in Clay_Context.layoutElements — replaces C pointer arithmetic
+        // Index of this element in Context.layoutElements — replaces C pointer arithmetic
         // (`element - context->layoutElements.internalArray`).
-        public int index;
+        public int Index;
 
         // Shallow clone: copies value-type fields and shares reference fields (children array, text string),
         // matching C's bitwise struct copy semantics for cloned exiting subtrees.
-        internal Clay_LayoutElement Clone() => (Clay_LayoutElement)MemberwiseClone();
+        internal LayoutElement Clone() => (LayoutElement)MemberwiseClone();
     }
 
     // Internal state of a scrolling container.
-    internal struct Clay__ScrollContainerDataInternal
+    internal struct ScrollContainerDataInternal
     {
-        public Clay_LayoutElement layoutElement;
-        public Clay_BoundingBox boundingBox;
-        public Clay_Dimensions contentSize;
-        public Vector2 scrollOrigin;
-        public Vector2 pointerOrigin;
-        public Vector2 scrollMomentum;
-        public Vector2 scrollPosition;
-        public Vector2 previousDelta;
-        public float momentumTime;
-        public uint elementId;
-        public bool openThisFrame;
-        public bool pointerScrollActive;
+        public LayoutElement LayoutElement;
+        public BoundingBox BoundingBox;
+        public Dimensions ContentSize;
+        public Vector2 ScrollOrigin;
+        public Vector2 PointerOrigin;
+        public Vector2 ScrollMomentum;
+        public Vector2 ScrollPosition;
+        public Vector2 PreviousDelta;
+        public float MomentumTime;
+        public uint ElementId;
+        public bool OpenThisFrame;
+        public bool PointerScrollActive;
     }
 
     // Internal state of a transition element.
-    internal struct Clay__TransitionDataInternal
+    internal struct TransitionDataInternal
     {
-        public Clay_TransitionData initialState;
-        public Clay_TransitionData currentState;
-        public Clay_TransitionData targetState;
-        public Clay_LayoutElement elementThisFrame;
-        public Vector2 oldParentRelativePosition;
-        public uint elementId;
-        public uint parentId;
-        public uint siblingIndex;
-        public float elapsedTime;
-        public Clay_TransitionState state;
-        public bool transitionOut;
-        public bool reparented;
-        public Clay_TransitionProperty activeProperties;
+        public TransitionData InitialState;
+        public TransitionData CurrentState;
+        public TransitionData TargetState;
+        public LayoutElement ElementThisFrame;
+        public Vector2 OldParentRelativePosition;
+        public uint ElementId;
+        public uint ParentId;
+        public uint SiblingIndex;
+        public float ElapsedTime;
+        public TransitionState State;
+        public bool TransitionOut;
+        public bool Reparented;
+        public TransitionProperty ActiveProperties;
     }
 
     // Hash map item for element ID -> element lookups.
-    internal struct Clay_LayoutElementHashMapItem
+    internal struct LayoutElementHashMapItem
     {
-        public Clay_BoundingBox boundingBox;
-        public Clay_ElementId elementId;
-        public Clay_LayoutElement layoutElement;
-        public int layoutElementIndex; // Index into Clay_Context.layoutElements (replaces C pointer arithmetic).
-        public Clay_OnHoverFunction? onHoverFunction;
-        public object? hoverFunctionUserData;
-        public int nextIndex;
-        public uint generation;
-        public bool appearedThisFrame;
-        public Clay__DebugData debugData;
+        public BoundingBox BoundingBox;
+        public ElementId ElementId;
+        public LayoutElement LayoutElement;
+        public int LayoutElementIndex; // Index into Context.layoutElements (replaces C pointer arithmetic).
+        public OnHoverFunction? OnHoverFunction;
+        public object? HoverFunctionUserData;
+        public int NextIndex;
+        public uint Generation;
+        public bool AppearedThisFrame;
+        public DebugDataType DebugData;
 
-        internal struct Clay__DebugData
+        internal struct DebugDataType
         {
-            public bool collision;
-            public bool collapsed;
+            public bool Collision;
+            public bool Collapsed;
         }
     }
 
     // A measured "word" in the text measurement cache, linked via `next`.
-    internal struct Clay__MeasuredWord
+    internal struct MeasuredWord
     {
-        public int startOffset;
-        public int length;
-        public float width;
-        public int next;
+        public int StartOffset;
+        public int Length;
+        public float Width;
+        public int Next;
     }
 
     // Hash map item for the text measurement cache.
-    internal struct Clay__MeasureTextCacheItem
+    internal struct MeasureTextCacheItem
     {
-        public Clay_Dimensions unwrappedDimensions;
-        public int measuredWordsStartIndex;
-        public float minWidth;
-        public bool containsNewlines;
-        public uint id;
-        public int nextIndex;
-        public uint generation;
+        public Dimensions UnwrappedDimensions;
+        public int MeasuredWordsStartIndex;
+        public float MinWidth;
+        public bool ContainsNewlines;
+        public uint Id;
+        public int NextIndex;
+        public uint Generation;
     }
 
     // A node used by the DFS layout passes.
-    internal struct Clay__LayoutElementTreeNode
+    internal struct LayoutElementTreeNode
     {
-        public Clay_LayoutElement layoutElement;
-        public Vector2 position;
-        public Vector2 nextChildOffset;
-        public bool parentMovedThisFramed; // Used to relativise transitions.
+        public LayoutElement LayoutElement;
+        public Vector2 Position;
+        public Vector2 NextChildOffset;
+        public bool ParentMovedThisFramed; // Used to relativise transitions.
     }
 
     // The root of a layout tree (the main tree plus each floating subtree).
-    internal struct Clay__LayoutElementTreeRoot
+    internal struct LayoutElementTreeRoot
     {
-        public int layoutElementIndex;
-        public uint parentId; // 0 in the case of the root layout tree.
-        public uint clipElementId; // 0 if there is no clip element.
-        public short zIndex;
-        public Vector2 pointerOffset; // Only used when scroll containers are managed externally.
+        public int LayoutElementIndex;
+        public uint ParentId; // 0 in the case of the root layout tree.
+        public uint ClipElementId; // 0 if there is no clip element.
+        public short ZIndex;
+        public Vector2 PointerOffset; // Only used when scroll containers are managed externally.
     }
 
-    // The entire per-context state, mirroring the C `struct Clay_Context`.
+    // The entire per-context state, mirroring the C `struct Context`.
     // A class (mutable reference) because it is frequently taken as a reference.
-    public sealed class Clay_Context
+    public sealed class Context
     {
-        internal int maxElementCount;
-        internal int maxMeasureTextCacheWordCount;
-        internal int exitingElementsLength;
-        internal int exitingElementsChildrenLength;
-        internal bool rootResizedLastFrame;
-        internal Clay_ErrorHandler errorHandler;
-        internal Clay_BooleanWarnings booleanWarnings;
+        internal int MaxElementCount;
+        internal int MaxMeasureTextCacheWordCount;
+        internal int ExitingElementsLength;
+        internal int ExitingElementsChildrenLength;
+        internal bool RootResizedLastFrame;
+        internal ErrorHandler ErrorHandler;
+        internal BooleanWarnings BooleanWarnings;
 
-        internal Clay_PointerData pointerInfo;
-        internal Clay_Dimensions layoutDimensions;
-        internal Clay_ElementId dynamicElementIndexBaseHash;
-        internal uint dynamicElementIndex;
-        internal bool debugModeEnabled;
-        internal bool disableCulling;
-        internal bool externalScrollHandlingEnabled;
-        internal bool warningsEnabled;
-        internal uint debugSelectedElementId;
-        internal uint generation;
-        internal object? measureTextUserData;
-        internal object? queryScrollOffsetUserData;
+        internal PointerData PointerInfo;
+        internal Dimensions LayoutDimensions;
+        internal ElementId DynamicElementIndexBaseHash;
+        internal uint DynamicElementIndex;
+        internal bool DebugModeEnabled;
+        internal bool DisableCulling;
+        internal bool ExternalScrollHandlingEnabled;
+        internal bool WarningsEnabled;
+        internal uint DebugSelectedElementId;
+        internal uint Generation;
+        internal object? MeasureTextUserData;
+        internal object? QueryScrollOffsetUserData;
 
         // Layout Elements / Render Commands
-        internal ClayArray<Clay_LayoutElement> layoutElements;
-        internal ClayArray<Clay_RenderCommand> renderCommands;
-        internal ClayArray<int> openLayoutElementStack;
-        internal ClayArray<Clay_LayoutElement> layoutElementChildren;
-        internal ClayArray<int> layoutElementChildrenBuffer;
-        internal ClayArray<int> reusableElementIndexBuffer;
-        internal ClayArray<int> layoutElementClipElementIds;
+        internal Array<LayoutElement> LayoutElements;
+        internal Array<RenderCommand> RenderCommands;
+        internal Array<int> OpenLayoutElementStack;
+        internal Array<LayoutElement> LayoutElementChildren;
+        internal Array<int> LayoutElementChildrenBuffer;
+        internal Array<int> ReusableElementIndexBuffer;
+        internal Array<int> LayoutElementClipElementIds;
 
         // Misc Data Structures
-        internal ClayArray<Clay__WrappedTextLine> wrappedTextLines;
-        internal ClayArray<Clay__LayoutElementTreeNode> layoutElementTreeNodeArray1;
-        internal ClayArray<Clay__LayoutElementTreeRoot> layoutElementTreeRoots;
-        internal ClayArray<Clay_LayoutElementHashMapItem> layoutElementsHashMapInternal;
-        internal ClayArray<int> layoutElementsHashMap;
-        internal ClayArray<int> layoutElementsHashMapFreeList;
-        internal ClayArray<Clay__MeasureTextCacheItem> measureTextHashMapInternal;
-        internal ClayArray<int> measureTextHashMapInternalFreeList;
-        internal ClayArray<int> measureTextHashMap;
-        internal ClayArray<Clay__MeasuredWord> measuredWords;
-        internal ClayArray<int> measuredWordsFreeList;
-        internal ClayArray<int> openClipElementStack;
-        internal ClayArray<Clay_ElementId> pointerOverIds;
-        internal ClayArray<Clay__ScrollContainerDataInternal> scrollContainerDatas;
-        internal ClayArray<Clay__TransitionDataInternal> transitionDatas;
-        internal ClayArray<bool> treeNodeVisited;
-        internal ClayArray<Clay__Warning> warnings;
+        internal Array<WrappedTextLine> WrappedTextLines;
+        internal Array<LayoutElementTreeNode> LayoutElementTreeNodeArray1;
+        internal Array<LayoutElementTreeRoot> LayoutElementTreeRoots;
+        internal Array<LayoutElementHashMapItem> LayoutElementsHashMapInternal;
+        internal Array<int> LayoutElementsHashMap;
+        internal Array<int> LayoutElementsHashMapFreeList;
+        internal Array<MeasureTextCacheItem> MeasureTextHashMapInternal;
+        internal Array<int> MeasureTextHashMapInternalFreeList;
+        internal Array<int> MeasureTextHashMap;
+        internal Array<MeasuredWord> MeasuredWords;
+        internal Array<int> MeasuredWordsFreeList;
+        internal Array<int> OpenClipElementStack;
+        internal Array<ElementId> PointerOverIds;
+        internal Array<ScrollContainerDataInternal> ScrollContainerDatas;
+        internal Array<TransitionDataInternal> TransitionDatas;
+        internal Array<bool> TreeNodeVisited;
+        internal Array<Warning> Warnings;
 
         // Reports an error through the configured error handler (mirrors the C `context->errorHandler.errorHandlerFunction(...)` calls).
-        internal void Error(Clay_ErrorType errorType, string errorText)
+        internal void Error(ErrorType errorType, string errorText)
         {
-            errorHandler.errorHandlerFunction?.Invoke(new Clay_ErrorData
+            ErrorHandler.ErrorHandlerFunction?.Invoke(new ErrorData
             {
-                errorType = errorType,
-                errorText = errorText,
-                userData = errorHandler.userData,
+                ErrorType = errorType,
+                ErrorText = errorText,
+                UserData = ErrorHandler.UserData,
             });
         }
 
         // Persistent memory — initialized once and not reset between frames.
         internal void InitializePersistentMemory()
         {
-            scrollContainerDatas = new ClayArray<Clay__ScrollContainerDataInternal>(100);
-            transitionDatas = new ClayArray<Clay__TransitionDataInternal>(200);
-            layoutElementsHashMapInternal = new ClayArray<Clay_LayoutElementHashMapItem>(maxElementCount);
-            layoutElementsHashMap = new ClayArray<int>(maxElementCount);
-            layoutElementsHashMapFreeList = new ClayArray<int>(maxElementCount);
-            measureTextHashMapInternal = new ClayArray<Clay__MeasureTextCacheItem>(maxElementCount);
-            measureTextHashMapInternalFreeList = new ClayArray<int>(maxElementCount);
-            measuredWordsFreeList = new ClayArray<int>(maxMeasureTextCacheWordCount);
-            measureTextHashMap = new ClayArray<int>(maxElementCount);
-            measuredWords = new ClayArray<Clay__MeasuredWord>(maxMeasureTextCacheWordCount);
-            pointerOverIds = new ClayArray<Clay_ElementId>(maxElementCount);
+            ScrollContainerDatas = new Array<ScrollContainerDataInternal>(100);
+            TransitionDatas = new Array<TransitionDataInternal>(200);
+            LayoutElementsHashMapInternal = new Array<LayoutElementHashMapItem>(MaxElementCount);
+            LayoutElementsHashMap = new Array<int>(MaxElementCount);
+            LayoutElementsHashMapFreeList = new Array<int>(MaxElementCount);
+            MeasureTextHashMapInternal = new Array<MeasureTextCacheItem>(MaxElementCount);
+            MeasureTextHashMapInternalFreeList = new Array<int>(MaxElementCount);
+            MeasuredWordsFreeList = new Array<int>(MaxMeasureTextCacheWordCount);
+            MeasureTextHashMap = new Array<int>(MaxElementCount);
+            MeasuredWords = new Array<MeasuredWord>(MaxMeasureTextCacheWordCount);
+            PointerOverIds = new Array<ElementId>(MaxElementCount);
         }
 
         // Ephemeral memory — reset every frame.
         internal void InitializeEphemeralMemory()
         {
-            layoutElementChildrenBuffer = new ClayArray<int>(maxElementCount);
-            layoutElements = new ClayArray<Clay_LayoutElement>(maxElementCount);
-            wrappedTextLines = new ClayArray<Clay__WrappedTextLine>(maxElementCount);
-            layoutElementTreeNodeArray1 = new ClayArray<Clay__LayoutElementTreeNode>(maxElementCount);
-            layoutElementTreeRoots = new ClayArray<Clay__LayoutElementTreeRoot>(maxElementCount);
-            layoutElementChildren = new ClayArray<Clay_LayoutElement>(maxElementCount);
-            openLayoutElementStack = new ClayArray<int>(maxElementCount);
-            renderCommands = new ClayArray<Clay_RenderCommand>(maxElementCount);
-            treeNodeVisited = new ClayArray<bool>(maxElementCount);
-            treeNodeVisited.length = treeNodeVisited.capacity; // Accessed directly rather than behaving as a list.
-            openClipElementStack = new ClayArray<int>(maxElementCount);
-            reusableElementIndexBuffer = new ClayArray<int>(maxElementCount);
-            layoutElementClipElementIds = new ClayArray<int>(maxElementCount);
-            warnings = new ClayArray<Clay__Warning>(100);
+            LayoutElementChildrenBuffer = new Array<int>(MaxElementCount);
+            LayoutElements = new Array<LayoutElement>(MaxElementCount);
+            WrappedTextLines = new Array<WrappedTextLine>(MaxElementCount);
+            LayoutElementTreeNodeArray1 = new Array<LayoutElementTreeNode>(MaxElementCount);
+            LayoutElementTreeRoots = new Array<LayoutElementTreeRoot>(MaxElementCount);
+            LayoutElementChildren = new Array<LayoutElement>(MaxElementCount);
+            OpenLayoutElementStack = new Array<int>(MaxElementCount);
+            RenderCommands = new Array<RenderCommand>(MaxElementCount);
+            TreeNodeVisited = new Array<bool>(MaxElementCount);
+            TreeNodeVisited.Length = TreeNodeVisited.Capacity; // Accessed directly rather than behaving as a list.
+            OpenClipElementStack = new Array<int>(MaxElementCount);
+            ReusableElementIndexBuffer = new Array<int>(MaxElementCount);
+            LayoutElementClipElementIds = new Array<int>(MaxElementCount);
+            Warnings = new Array<Warning>(100);
         }
     }
 
-    // Generic fixed-capacity array, a managed replacement for the C `CLAY__ARRAY_DEFINE` macro families.
+    // Generic fixed-capacity array, a managed replacement for the C `_ARRAY_DEFINE` macro families.
     // `ref` returns replace the C `&array->internalArray[i]` pointer returns.
-    internal struct ClayArray<T>
+    internal struct Array<T>(int capacity)
     {
-        public int capacity;
-        public int length;
-        public T[] internalArray;
+        public readonly int Capacity = capacity;
+        public int Length = 0;
+        public T[] InternalArray = new T[capacity];
 
-        private static T s_default = default!;
-
-        public ClayArray(int capacity)
+        public readonly ref T Get(int index)
         {
-            this.capacity = capacity;
-            this.length = 0;
-            this.internalArray = new T[capacity];
+            if (__Array_RangeCheck(index, Length)) return ref InternalArray[index];
+            return ref Unsafe.NullRef<T>();
         }
 
-        public ref T Get(int index)
+        public readonly T GetValue(int index)
         {
-            if (Clay.__Array_RangeCheck(index, length)) return ref internalArray[index];
-            return ref s_default;
-        }
-
-        public T GetValue(int index)
-        {
-            if (Clay.__Array_RangeCheck(index, length)) return internalArray[index];
+            if (__Array_RangeCheck(index, Length)) return InternalArray[index];
             return default!;
         }
 
-        public ref T GetCheckCapacity(int index)
+        public readonly ref T GetCheckCapacity(int index)
         {
-            if (Clay.__Array_RangeCheck(index, capacity)) return ref internalArray[index];
-            return ref s_default;
+            if (__Array_RangeCheck(index, Capacity)) return ref InternalArray[index];
+            return ref Unsafe.NullRef<T>();
         }
 
         public ref T Add(T item)
         {
-            if (Clay.__Array_AddCapacityCheck(length, capacity))
+            if (__Array_AddCapacityCheck(Length, Capacity))
             {
-                internalArray[length++] = item;
-                return ref internalArray[length - 1];
+                InternalArray[Length++] = item;
+                return ref InternalArray[Length - 1];
             }
-            return ref s_default;
+            return ref Unsafe.NullRef<T>();
         }
 
         public T RemoveSwapback(int index)
         {
-            if (Clay.__Array_RangeCheck(index, length))
+            if (__Array_RangeCheck(index, Length))
             {
-                length--;
-                T removed = internalArray[index];
-                internalArray[index] = internalArray[length];
+                Length--;
+                T removed = InternalArray[index];
+                InternalArray[index] = InternalArray[Length];
                 return removed;
             }
             return default!;
@@ -1044,23 +1037,23 @@ namespace ClaySharp
 
         public ref T Set(int index, T value)
         {
-            if (Clay.__Array_RangeCheck(index, capacity))
+            if (__Array_RangeCheck(index, Capacity))
             {
-                internalArray[index] = value;
-                length = index < length ? length : index + 1;
-                return ref internalArray[index];
+                InternalArray[index] = value;
+                Length = index < Length ? Length : index + 1;
+                return ref InternalArray[index];
             }
-            return ref s_default;
+            return ref Unsafe.NullRef<T>();
         }
 
-        public ref T Set_DontTouchLength(int index, T value)
+        public readonly ref T Set_DontTouchLength(int index, T value)
         {
-            if (Clay.__Array_RangeCheck(index, capacity))
+            if (__Array_RangeCheck(index, Capacity))
             {
-                internalArray[index] = value;
-                return ref internalArray[index];
+                InternalArray[index] = value;
+                return ref InternalArray[index];
             }
-            return ref s_default;
+            return ref Unsafe.NullRef<T>();
         }
     }
 
@@ -1068,1656 +1061,1483 @@ namespace ClaySharp
     // ENGINE — the static facade + internals ----
     // -----------------------------------------
 
-    public static partial class Clay
+    private const float MaxFloat = 3.40282346638528859812e+38f;
+    private const float Epsilon = 0.01f;
+
+    internal static Context? SCurrentContext;
+    internal static int SDefaultMaxElementCount = 8192;
+    internal static int SDefaultMaxMeasureTextWordCacheCount = 16384;
+
+    // Default layout config (matches the C `extern LayoutConfig LAYOUT_DEFAULT`).
+    public static readonly LayoutConfig LayoutDefault = default;
+
+    // Debug view globals (the inspector itself lives in Clay.DebugView.cs).
+    public static uint DebugViewWidth = 400;
+    public static Color DebugViewHighlightColor = new Color(168, 66, 28, 100);
+
+    // Function-pointer globals (mirrors the C `_MeasureText` / `_QueryScrollOffset`).
+    internal static MeasureTextFunction? SMeasureText;
+    internal static QueryScrollOffsetFunction? SQueryScrollOffset;
+
+    public static Context? GetCurrentContext() => SCurrentContext;
+    public static void SetCurrentContext(Context? context) => SCurrentContext = context;
+
+    // -------------------------------------
+    // Error helpers ------------------------
+    // -------------------------------------
+
+    internal static bool __Array_RangeCheck(int index, int length)
     {
-        private const float CLAY__MAXFLOAT = 3.40282346638528859812e+38f;
-        private const float CLAY__EPSILON = 0.01f;
+        if (index < length && index >= 0) return true;
+        GetCurrentContext()?.Error(ErrorType.InternalError,
+            "Clay attempted to make an out of bounds array access. This is an internal error and is likely a bug.");
+        return false;
+    }
 
-        internal static Clay_Context? s_currentContext;
-        internal static int s_defaultMaxElementCount = 8192;
-        internal static int s_defaultMaxMeasureTextWordCacheCount = 16384;
+    internal static bool __Array_AddCapacityCheck(int length, int capacity)
+    {
+        if (length < capacity) return true;
+        GetCurrentContext()?.Error(ErrorType.InternalError,
+            "Clay attempted to make an out of bounds array access. This is an internal error and is likely a bug.");
+        return false;
+    }
 
-        // Default layout config (matches the C `extern Clay_LayoutConfig CLAY_LAYOUT_DEFAULT`).
-        public static readonly Clay_LayoutConfig CLAY_LAYOUT_DEFAULT = default;
+    // -------------------------------------
+    // Hashing ------------------------------
+    // -------------------------------------
 
-        // Debug view globals (the inspector itself lives in Clay.DebugView.cs).
-        public static uint __debugViewWidth = 400;
-        public static Clay_Color __debugViewHighlightColor = new Clay_Color(168, 66, 28, 100);
+    internal static ElementId __HashNumber(uint offset, uint seed)
+    {
+        var hash = new HashCode();
+        hash.Add(seed);
+        hash.Add(offset + 48);
+        uint id = unchecked((uint)hash.ToHashCode());
+        return new ElementId { Id = id + 1, Offset = offset, BaseId = seed, StringId = string.Empty }; // Reserve the hash result of zero as "null id".
+    }
 
-        // Function-pointer globals (mirrors the C `Clay__MeasureText` / `Clay__QueryScrollOffset`).
-        internal static Clay_MeasureTextFunction? s_measureText;
-        internal static Clay_QueryScrollOffsetFunction? s_queryScrollOffset;
+    internal static ElementId __HashString(string key, uint seed)
+    {
+        var hash = new HashCode();
+        hash.Add(seed);
+        hash.Add(key);
+        uint id = unchecked((uint)hash.ToHashCode());
+        return new ElementId { Id = id + 1, Offset = 0, BaseId = id + 1, StringId = key }; // Reserve the hash result of zero as "null id".
+    }
 
-        public static Clay_Context? GetCurrentContext() => s_currentContext;
-        public static void SetCurrentContext(Clay_Context? context) => s_currentContext = context;
+    internal static ElementId __HashStringWithOffset(string key, uint offset, uint seed)
+    {
+        var baseHash = new HashCode();
+        baseHash.Add(seed);
+        baseHash.Add(key);
+        uint baseId = unchecked((uint)baseHash.ToHashCode());
 
-        // -------------------------------------
-        // Error helpers ------------------------
-        // -------------------------------------
+        var hash = new HashCode();
+        hash.Add(baseId);
+        hash.Add(offset);
+        uint id = unchecked((uint)hash.ToHashCode());
 
-        internal static bool __Array_RangeCheck(int index, int length)
+        return new ElementId { Id = id + 1, Offset = offset, BaseId = baseId + 1, StringId = key }; // Reserve the hash result of zero as "null id".
+    }
+
+    internal static uint __HashStringContentsWithConfig(string text, TextElementConfig config)
+    {
+        var hash = new HashCode();
+        hash.Add(text);
+        hash.Add(config.FontId);
+        hash.Add(config.FontSize);
+        hash.Add(config.LetterSpacing);
+        return unchecked((uint)hash.ToHashCode()) + 1; // Reserve the hash result of zero as "null id".
+    }
+
+    // -------------------------------------
+    // Element access helpers ---------------
+    // -------------------------------------
+
+    internal static LayoutElement __GetOpenLayoutElement()
+    {
+        var context = GetCurrentContext()!;
+        return context.LayoutElements.InternalArray[context.OpenLayoutElementStack.InternalArray[context.OpenLayoutElementStack.Length - 1]];
+    }
+
+    internal static LayoutElement __GetParentElement()
+    {
+        var context = GetCurrentContext()!;
+        return context.LayoutElements.InternalArray[context.OpenLayoutElementStack.GetValue(context.OpenLayoutElementStack.Length - 2)];
+    }
+
+    internal static uint __GetParentElementId() => __GetParentElement().Id;
+
+    internal static bool __BorderHasAnyWidth(in BorderElementConfig borderConfig)
+    {
+        return borderConfig.Width.BetweenChildren > 0 || borderConfig.Width.Left > 0 || borderConfig.Width.Right > 0
+               || borderConfig.Width.Top > 0 || borderConfig.Width.Bottom > 0;
+    }
+
+    internal static void __UpdateAspectRatioBox(LayoutElement layoutElement)
+    {
+        if (layoutElement.Config.AspectRatio.AspectRatio != 0)
         {
-            if (index < length && index >= 0) return true;
-            GetCurrentContext()?.Error(Clay_ErrorType.CLAY_ERROR_TYPE_INTERNAL_ERROR,
-                "Clay attempted to make an out of bounds array access. This is an internal error and is likely a bug.");
-            return false;
-        }
-
-        internal static bool __Array_AddCapacityCheck(int length, int capacity)
-        {
-            if (length < capacity) return true;
-            GetCurrentContext()?.Error(Clay_ErrorType.CLAY_ERROR_TYPE_INTERNAL_ERROR,
-                "Clay attempted to make an out of bounds array access. This is an internal error and is likely a bug.");
-            return false;
-        }
-
-        // -------------------------------------
-        // Hashing ------------------------------
-        // -------------------------------------
-
-        internal static Clay_ElementId __HashNumber(uint offset, uint seed)
-        {
-            var hash = new HashCode();
-            hash.Add(seed);
-            hash.Add(offset + 48);
-            uint id = unchecked((uint)hash.ToHashCode());
-            return new Clay_ElementId { id = id + 1, offset = offset, baseId = seed, stringId = string.Empty }; // Reserve the hash result of zero as "null id".
-        }
-
-        internal static Clay_ElementId __HashString(string key, uint seed)
-        {
-            var hash = new HashCode();
-            hash.Add(seed);
-            hash.Add(key);
-            uint id = unchecked((uint)hash.ToHashCode());
-            return new Clay_ElementId { id = id + 1, offset = 0, baseId = id + 1, stringId = key }; // Reserve the hash result of zero as "null id".
-        }
-
-        internal static Clay_ElementId __HashStringWithOffset(string key, uint offset, uint seed)
-        {
-            var baseHash = new HashCode();
-            baseHash.Add(seed);
-            baseHash.Add(key);
-            uint baseId = unchecked((uint)baseHash.ToHashCode());
-
-            var hash = new HashCode();
-            hash.Add(baseId);
-            hash.Add(offset);
-            uint id = unchecked((uint)hash.ToHashCode());
-
-            return new Clay_ElementId { id = id + 1, offset = offset, baseId = baseId + 1, stringId = key }; // Reserve the hash result of zero as "null id".
-        }
-
-        internal static uint __HashStringContentsWithConfig(string text, Clay_TextElementConfig config)
-        {
-            var hash = new HashCode();
-            hash.Add(text);
-            hash.Add(config.fontId);
-            hash.Add(config.fontSize);
-            hash.Add(config.letterSpacing);
-            return unchecked((uint)hash.ToHashCode()) + 1; // Reserve the hash result of zero as "null id".
-        }
-
-        // -------------------------------------
-        // Element access helpers ---------------
-        // -------------------------------------
-
-        internal static Clay_LayoutElement __GetOpenLayoutElement()
-        {
-            var context = GetCurrentContext()!;
-            return context.layoutElements.internalArray[context.openLayoutElementStack.internalArray[context.openLayoutElementStack.length - 1]];
-        }
-
-        internal static Clay_LayoutElement __GetParentElement()
-        {
-            var context = GetCurrentContext()!;
-            return context.layoutElements.internalArray[context.openLayoutElementStack.GetValue(context.openLayoutElementStack.length - 2)];
-        }
-
-        internal static uint __GetParentElementId() => __GetParentElement().id;
-
-        internal static bool __BorderHasAnyWidth(in Clay_BorderElementConfig borderConfig)
-        {
-            return borderConfig.width.betweenChildren > 0 || borderConfig.width.left > 0 || borderConfig.width.right > 0
-                || borderConfig.width.top > 0 || borderConfig.width.bottom > 0;
-        }
-
-        internal static void __UpdateAspectRatioBox(Clay_LayoutElement layoutElement)
-        {
-            if (layoutElement.config.aspectRatio.aspectRatio != 0)
+            if (layoutElement.Dimensions.Width == 0 && layoutElement.Dimensions.Height != 0)
             {
-                if (layoutElement.dimensions.width == 0 && layoutElement.dimensions.height != 0)
-                {
-                    layoutElement.dimensions.width = layoutElement.dimensions.height * layoutElement.config.aspectRatio.aspectRatio;
-                }
-                else if (layoutElement.dimensions.width != 0 && layoutElement.dimensions.height == 0)
-                {
-                    layoutElement.dimensions.height = layoutElement.dimensions.width * (1 / layoutElement.config.aspectRatio.aspectRatio);
-                }
+                layoutElement.Dimensions.Width = layoutElement.Dimensions.Height * layoutElement.Config.AspectRatio.AspectRatio;
+            }
+            else if (layoutElement.Dimensions.Width != 0 && layoutElement.Dimensions.Height == 0)
+            {
+                layoutElement.Dimensions.Height = layoutElement.Dimensions.Width * (1 / layoutElement.Config.AspectRatio.AspectRatio);
             }
         }
+    }
 
-        internal static bool __PointIsInsideRect(Vector2 point, Clay_BoundingBox rect)
+    internal static bool __PointIsInsideRect(Vector2 point, BoundingBox rect)
+    {
+        return point.X >= rect.X && point.X <= rect.X + rect.Width && point.Y >= rect.Y && point.Y <= rect.Y + rect.Height;
+    }
+
+    internal static bool __FloatEqual(float left, float right)
+    {
+        float subtracted = left - right;
+        return subtracted < Epsilon && subtracted > -Epsilon;
+    }
+
+    // Equality helpers replacing the C _MemCmp usage in the non-debug engine.
+    internal static bool __ColorEqual(in Color a, in Color b) => a.R == b.R && a.G == b.G && a.B == b.B && a.A == b.A;
+    internal static bool __BorderWidthEqual(in BorderWidth a, in BorderWidth b)
+        => a.Left == b.Left && a.Right == b.Right && a.Top == b.Top && a.Bottom == b.Bottom && a.BetweenChildren == b.BetweenChildren;
+
+    // -------------------------------------
+    // Element ID hash map ------------------
+    // -------------------------------------
+
+    internal static ref LayoutElementHashMapItem __AddHashMapItem(ElementId elementId, LayoutElement layoutElement, int layoutElementIndex)
+    {
+        var context = GetCurrentContext()!;
+        if (context.LayoutElementsHashMapInternal.Length == context.LayoutElementsHashMapInternal.Capacity - 1)
         {
-            return point.X >= rect.x && point.X <= rect.x + rect.width && point.Y >= rect.y && point.Y <= rect.y + rect.height;
+            if (!context.BooleanWarnings.HashMapCapacityExceeded)
+            {
+                context.BooleanWarnings.HashMapCapacityExceeded = true;
+                context.Error(ErrorType.HashMapCapacityExceeded,
+                    "Clay has run out of space in it's internal element ID hashmap.  Try using SetMaxElementCount() with a higher value.");
+            }
+            return ref Unsafe.NullRef<LayoutElementHashMapItem>();
         }
 
-        internal static bool __FloatEqual(float left, float right)
+        var item = new LayoutElementHashMapItem
         {
-            float subtracted = left - right;
-            return subtracted < CLAY__EPSILON && subtracted > -CLAY__EPSILON;
+            ElementId = elementId,
+            LayoutElement = layoutElement,
+            LayoutElementIndex = layoutElementIndex,
+            NextIndex = -1,
+            Generation = context.Generation + 1,
+            AppearedThisFrame = true,
+        };
+
+        int hashBucket = (int)(elementId.Id % (uint)context.LayoutElementsHashMap.Capacity);
+        int hashItemPrevious = -1;
+        int hashItemIndex = context.LayoutElementsHashMap.InternalArray[hashBucket];
+        while (hashItemIndex != -1) // Just replace collision, not a big deal - leave it up to the end user.
+        {
+            ref var hashItem = ref context.LayoutElementsHashMapInternal.InternalArray[hashItemIndex];
+            if (hashItem.ElementId.Id == elementId.Id) // Collision - resolve based on generation.
+            {
+                item.NextIndex = hashItem.NextIndex;
+                if (hashItem.Generation <= context.Generation) // First collision - assume this is the "same" element.
+                {
+                    hashItem.AppearedThisFrame = hashItem.Generation < context.Generation;
+                    hashItem.ElementId = elementId; // If the stringId reference has changed, update the hash item to use the new one.
+                    hashItem.Generation = context.Generation + 1;
+                    hashItem.LayoutElement = layoutElement;
+                    hashItem.LayoutElementIndex = layoutElementIndex;
+                    hashItem.DebugData.Collision = false;
+                    hashItem.OnHoverFunction = null;
+                    hashItem.HoverFunctionUserData = null;
+                }
+                else // Multiple collisions this frame - two elements have the same ID.
+                {
+                    context.Error(ErrorType.DuplicateId,
+                        "An element with this ID was already previously declared during this layout.");
+                    if (context.DebugModeEnabled) hashItem.DebugData.Collision = true;
+                }
+                return ref hashItem;
+            }
+            hashItemPrevious = hashItemIndex;
+            hashItemIndex = hashItem.NextIndex;
         }
 
-        // Equality helpers replacing the C Clay__MemCmp usage in the non-debug engine.
-        internal static bool __ColorEqual(in Clay_Color a, in Clay_Color b) => a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
-        internal static bool __BorderWidthEqual(in Clay_BorderWidth a, in Clay_BorderWidth b)
-            => a.left == b.left && a.right == b.right && a.top == b.top && a.bottom == b.bottom && a.betweenChildren == b.betweenChildren;
-
-        // -------------------------------------
-        // Element ID hash map ------------------
-        // -------------------------------------
-
-        internal static ref Clay_LayoutElementHashMapItem __AddHashMapItem(Clay_ElementId elementId, Clay_LayoutElement layoutElement, int layoutElementIndex)
+        int indexToUse;
+        if (context.LayoutElementsHashMapFreeList.Length > 0)
         {
-            var context = GetCurrentContext()!;
-            if (context.layoutElementsHashMapInternal.length == context.layoutElementsHashMapInternal.capacity - 1)
+            indexToUse = context.LayoutElementsHashMapFreeList.InternalArray[context.LayoutElementsHashMapFreeList.Length - 1];
+            context.LayoutElementsHashMapFreeList.Length--;
+        }
+        else
+        {
+            indexToUse = context.LayoutElementsHashMapInternal.Length;
+        }
+        context.LayoutElementsHashMapInternal.Set(indexToUse, item);
+        if (hashItemPrevious != -1)
+        {
+            context.LayoutElementsHashMapInternal.InternalArray[hashItemPrevious].NextIndex = indexToUse;
+        }
+        else
+        {
+            context.LayoutElementsHashMap.InternalArray[hashBucket] = indexToUse;
+        }
+        return ref context.LayoutElementsHashMapInternal.InternalArray[indexToUse];
+    }
+
+    internal static ref LayoutElementHashMapItem __GetHashMapItem(uint id)
+    {
+        var context = GetCurrentContext();
+        if (context == null) return ref Unsafe.NullRef<LayoutElementHashMapItem>();
+        int hashBucket = (int)(id % (uint)context.LayoutElementsHashMap.Capacity);
+        int elementIndex = context.LayoutElementsHashMap.InternalArray[hashBucket];
+        while (elementIndex != -1)
+        {
+            ref var hashEntry = ref context.LayoutElementsHashMapInternal.InternalArray[elementIndex];
+            if (hashEntry.ElementId.Id == id) return ref hashEntry;
+            elementIndex = hashEntry.NextIndex;
+        }
+        return ref Unsafe.NullRef<LayoutElementHashMapItem>();
+    }
+
+    // -------------------------------------
+    // Text measurement cache ---------------
+    // -------------------------------------
+
+    internal static ref MeasuredWord __AddMeasuredWord(MeasuredWord word, ref MeasuredWord previousWord)
+    {
+        var context = GetCurrentContext()!;
+        if (context.MeasuredWordsFreeList.Length > 0)
+        {
+            int newItemIndex = context.MeasuredWordsFreeList.InternalArray[context.MeasuredWordsFreeList.Length - 1];
+            context.MeasuredWordsFreeList.Length--;
+            context.MeasuredWords.InternalArray[newItemIndex] = word;
+            previousWord.Next = newItemIndex;
+            return ref context.MeasuredWords.InternalArray[newItemIndex];
+        }
+        else
+        {
+            previousWord.Next = context.MeasuredWords.Length;
+            return ref context.MeasuredWords.Add(word);
+        }
+    }
+
+    internal static MeasureTextCacheItem __MeasureTextCached(string text, TextElementConfig config)
+    {
+        var context = GetCurrentContext()!;
+        if (SMeasureText == null)
+        {
+            if (!context.BooleanWarnings.TextMeasurementFunctionNotSet)
             {
-                if (!context.booleanWarnings.hashMapCapacityExceeded)
-                {
-                    context.booleanWarnings.hashMapCapacityExceeded = true;
-                    context.Error(Clay_ErrorType.CLAY_ERROR_TYPE_HASH_MAP_CAPACITY_EXCEEDED,
-                        "Clay has run out of space in it's internal element ID hashmap.  Try using Clay_SetMaxElementCount() with a higher value.");
-                }
-                return ref Unsafe.NullRef<Clay_LayoutElementHashMapItem>();
+                context.BooleanWarnings.TextMeasurementFunctionNotSet = true;
+                context.Error(ErrorType.TextMeasurementFunctionNotProvided,
+                    "Clay's internal MeasureText function is null. You may have forgotten to call SetMeasureTextFunction(), or passed a NULL function pointer by mistake.");
+            }
+            return default;
+        }
+
+        uint id = __HashStringContentsWithConfig(text, config);
+        int hashBucket = (int)(id % (uint)(context.MaxMeasureTextCacheWordCount / 32));
+        int elementIndexPrevious = 0;
+        int elementIndex = context.MeasureTextHashMap.InternalArray[hashBucket];
+        while (elementIndex != 0)
+        {
+            var hashEntry = context.MeasureTextHashMapInternal.InternalArray[elementIndex];
+            if (hashEntry.Id == id)
+            {
+                hashEntry.Generation = context.Generation;
+                context.MeasureTextHashMapInternal.InternalArray[elementIndex] = hashEntry;
+                return hashEntry;
             }
 
-            var item = new Clay_LayoutElementHashMapItem
+            // This element hasn't been seen in a few frames, delete the hash map item.
+            if (context.Generation - hashEntry.Generation > 2)
             {
-                elementId = elementId,
-                layoutElement = layoutElement,
-                layoutElementIndex = layoutElementIndex,
-                nextIndex = -1,
-                generation = context.generation + 1,
-                appearedThisFrame = true,
-            };
-
-            int hashBucket = (int)(elementId.id % (uint)context.layoutElementsHashMap.capacity);
-            int hashItemPrevious = -1;
-            int hashItemIndex = context.layoutElementsHashMap.internalArray[hashBucket];
-            while (hashItemIndex != -1) // Just replace collision, not a big deal - leave it up to the end user.
-            {
-                ref var hashItem = ref context.layoutElementsHashMapInternal.internalArray[hashItemIndex];
-                if (hashItem.elementId.id == elementId.id) // Collision - resolve based on generation.
+                // Add all the measured words that were included in this measurement to the freelist.
+                int nextWordIndex = hashEntry.MeasuredWordsStartIndex;
+                while (nextWordIndex != -1)
                 {
-                    item.nextIndex = hashItem.nextIndex;
-                    if (hashItem.generation <= context.generation) // First collision - assume this is the "same" element.
-                    {
-                        hashItem.appearedThisFrame = hashItem.generation < context.generation;
-                        hashItem.elementId = elementId; // If the stringId reference has changed, update the hash item to use the new one.
-                        hashItem.generation = context.generation + 1;
-                        hashItem.layoutElement = layoutElement;
-                        hashItem.layoutElementIndex = layoutElementIndex;
-                        hashItem.debugData.collision = false;
-                        hashItem.onHoverFunction = null;
-                        hashItem.hoverFunctionUserData = null;
-                    }
-                    else // Multiple collisions this frame - two elements have the same ID.
-                    {
-                        context.Error(Clay_ErrorType.CLAY_ERROR_TYPE_DUPLICATE_ID,
-                            "An element with this ID was already previously declared during this layout.");
-                        if (context.debugModeEnabled) hashItem.debugData.collision = true;
-                    }
-                    return ref hashItem;
+                    var measuredWord = context.MeasuredWords.InternalArray[nextWordIndex];
+                    context.MeasuredWordsFreeList.Add(nextWordIndex);
+                    nextWordIndex = measuredWord.Next;
                 }
-                hashItemPrevious = hashItemIndex;
-                hashItemIndex = hashItem.nextIndex;
-            }
 
-            int indexToUse;
-            if (context.layoutElementsHashMapFreeList.length > 0)
-            {
-                indexToUse = context.layoutElementsHashMapFreeList.internalArray[context.layoutElementsHashMapFreeList.length - 1];
-                context.layoutElementsHashMapFreeList.length--;
+                int nextIndex = hashEntry.NextIndex;
+                context.MeasureTextHashMapInternal.InternalArray[elementIndex] = new MeasureTextCacheItem { MeasuredWordsStartIndex = -1 };
+                context.MeasureTextHashMapInternalFreeList.Add(elementIndex);
+                if (elementIndexPrevious == 0)
+                {
+                    context.MeasureTextHashMap.InternalArray[hashBucket] = nextIndex;
+                }
+                else
+                {
+                    var previousHashEntry = context.MeasureTextHashMapInternal.InternalArray[elementIndexPrevious];
+                    previousHashEntry.NextIndex = nextIndex;
+                    context.MeasureTextHashMapInternal.InternalArray[elementIndexPrevious] = previousHashEntry;
+                }
+                elementIndex = nextIndex;
             }
             else
             {
-                indexToUse = context.layoutElementsHashMapInternal.length;
-            }
-            context.layoutElementsHashMapInternal.Set(indexToUse, item);
-            if (hashItemPrevious != -1)
-            {
-                context.layoutElementsHashMapInternal.internalArray[hashItemPrevious].nextIndex = indexToUse;
-            }
-            else
-            {
-                context.layoutElementsHashMap.internalArray[hashBucket] = indexToUse;
-            }
-            return ref context.layoutElementsHashMapInternal.internalArray[indexToUse];
-        }
-
-        internal static ref Clay_LayoutElementHashMapItem __GetHashMapItem(uint id)
-        {
-            var context = GetCurrentContext();
-            if (context == null) return ref Unsafe.NullRef<Clay_LayoutElementHashMapItem>();
-            int hashBucket = (int)(id % (uint)context.layoutElementsHashMap.capacity);
-            int elementIndex = context.layoutElementsHashMap.internalArray[hashBucket];
-            while (elementIndex != -1)
-            {
-                ref var hashEntry = ref context.layoutElementsHashMapInternal.internalArray[elementIndex];
-                if (hashEntry.elementId.id == id) return ref hashEntry;
-                elementIndex = hashEntry.nextIndex;
-            }
-            return ref Unsafe.NullRef<Clay_LayoutElementHashMapItem>();
-        }
-
-        // -------------------------------------
-        // Text measurement cache ---------------
-        // -------------------------------------
-
-        internal static ref Clay__MeasuredWord __AddMeasuredWord(Clay__MeasuredWord word, ref Clay__MeasuredWord previousWord)
-        {
-            var context = GetCurrentContext()!;
-            if (context.measuredWordsFreeList.length > 0)
-            {
-                int newItemIndex = context.measuredWordsFreeList.internalArray[context.measuredWordsFreeList.length - 1];
-                context.measuredWordsFreeList.length--;
-                context.measuredWords.internalArray[newItemIndex] = word;
-                previousWord.next = newItemIndex;
-                return ref context.measuredWords.internalArray[newItemIndex];
-            }
-            else
-            {
-                previousWord.next = context.measuredWords.length;
-                return ref context.measuredWords.Add(word);
+                elementIndexPrevious = elementIndex;
+                elementIndex = hashEntry.NextIndex;
             }
         }
 
-        internal static Clay__MeasureTextCacheItem __MeasureTextCached(string text, Clay_TextElementConfig config)
+        int newItemIndex;
+        var measured = new MeasureTextCacheItem { MeasuredWordsStartIndex = -1, Id = id, Generation = context.Generation };
+        if (context.MeasureTextHashMapInternalFreeList.Length > 0)
         {
-            var context = GetCurrentContext()!;
-            if (s_measureText == null)
+            newItemIndex = context.MeasureTextHashMapInternalFreeList.InternalArray[context.MeasureTextHashMapInternalFreeList.Length - 1];
+            context.MeasureTextHashMapInternalFreeList.Length--;
+            context.MeasureTextHashMapInternal.InternalArray[newItemIndex] = measured;
+        }
+        else
+        {
+            if (context.MeasureTextHashMapInternal.Length == context.MeasureTextHashMapInternal.Capacity - 1)
             {
-                if (!context.booleanWarnings.textMeasurementFunctionNotSet)
+                if (!context.BooleanWarnings.MaxTextMeasureCacheExceeded)
                 {
-                    context.booleanWarnings.textMeasurementFunctionNotSet = true;
-                    context.Error(Clay_ErrorType.CLAY_ERROR_TYPE_TEXT_MEASUREMENT_FUNCTION_NOT_PROVIDED,
-                        "Clay's internal MeasureText function is null. You may have forgotten to call Clay_SetMeasureTextFunction(), or passed a NULL function pointer by mistake.");
+                    context.BooleanWarnings.MaxTextMeasureCacheExceeded = true;
+                    context.Error(ErrorType.ElementsCapacityExceeded,
+                        "Clay ran out of capacity while attempting to measure text elements. Try using SetMaxElementCount() with a higher value.");
+                }
+                return default;
+            }
+            newItemIndex = context.MeasureTextHashMapInternal.Length;
+            context.MeasureTextHashMapInternal.Add(measured);
+        }
+
+        int start = 0;
+        int end = 0;
+        float lineWidth = 0;
+        float measuredWidth = 0;
+        float measuredHeight = 0;
+        float spaceWidth = SMeasureText(new StringSegment(" "), config, context.MeasureTextUserData).Width;
+
+        MeasuredWord tempWord = default;
+        tempWord.Next = -1;
+        ref MeasuredWord previousWord = ref tempWord;
+
+        while (end < text.Length)
+        {
+            if (context.MeasuredWords.Length == context.MeasuredWords.Capacity - 1)
+            {
+                if (!context.BooleanWarnings.MaxTextMeasureCacheExceeded)
+                {
+                    context.BooleanWarnings.MaxTextMeasureCacheExceeded = true;
+                    context.Error(ErrorType.TextMeasurementCapacityExceeded,
+                        "Clay has run out of space in it's internal text measurement cache. Try using SetMaxMeasureTextCacheWordCount() (default 16384, with 1 unit storing 1 measured word).");
                 }
                 return default;
             }
 
-            uint id = __HashStringContentsWithConfig(text, config);
-            int hashBucket = (int)(id % (uint)(context.maxMeasureTextCacheWordCount / 32));
-            int elementIndexPrevious = 0;
-            int elementIndex = context.measureTextHashMap.internalArray[hashBucket];
-            while (elementIndex != 0)
+            char current = text[end];
+            if (current == ' ' || current == '\n')
             {
-                var hashEntry = context.measureTextHashMapInternal.internalArray[elementIndex];
-                if (hashEntry.id == id)
+                int length = end - start;
+                Dimensions dimensions = default;
+                if (length > 0)
                 {
-                    hashEntry.generation = context.generation;
-                    context.measureTextHashMapInternal.internalArray[elementIndex] = hashEntry;
-                    return hashEntry;
+                    dimensions = SMeasureText(new StringSegment(text, start, length), config, context.MeasureTextUserData);
                 }
-
-                // This element hasn't been seen in a few frames, delete the hash map item.
-                if (context.generation - hashEntry.generation > 2)
+                measured.MinWidth = MathF.Max(dimensions.Width, measured.MinWidth);
+                measuredHeight = MathF.Max(measuredHeight, dimensions.Height);
+                if (current == ' ')
                 {
-                    // Add all the measured words that were included in this measurement to the freelist.
-                    int nextWordIndex = hashEntry.measuredWordsStartIndex;
-                    while (nextWordIndex != -1)
+                    dimensions.Width += spaceWidth;
+                    previousWord = ref __AddMeasuredWord(new MeasuredWord { StartOffset = start, Length = length + 1, Width = dimensions.Width, Next = -1 }, ref previousWord);
+                    lineWidth += dimensions.Width;
+                }
+                if (current == '\n')
+                {
+                    if (length > 0)
                     {
-                        var measuredWord = context.measuredWords.internalArray[nextWordIndex];
-                        context.measuredWordsFreeList.Add(nextWordIndex);
-                        nextWordIndex = measuredWord.next;
+                        previousWord = ref __AddMeasuredWord(new MeasuredWord { StartOffset = start, Length = length, Width = dimensions.Width, Next = -1 }, ref previousWord);
                     }
+                    previousWord = ref __AddMeasuredWord(new MeasuredWord { StartOffset = end + 1, Length = 0, Width = 0, Next = -1 }, ref previousWord);
+                    lineWidth += dimensions.Width;
+                    measuredWidth = MathF.Max(lineWidth, measuredWidth);
+                    measured.ContainsNewlines = true;
+                    lineWidth = 0;
+                }
+                start = end + 1;
+            }
+            end++;
+        }
 
-                    int nextIndex = hashEntry.nextIndex;
-                    context.measureTextHashMapInternal.internalArray[elementIndex] = new Clay__MeasureTextCacheItem { measuredWordsStartIndex = -1 };
-                    context.measureTextHashMapInternalFreeList.Add(elementIndex);
-                    if (elementIndexPrevious == 0)
+        if (end - start > 0)
+        {
+            Dimensions dimensions = SMeasureText(new StringSegment(text, start, end - start), config, context.MeasureTextUserData);
+            __AddMeasuredWord(new MeasuredWord { StartOffset = start, Length = end - start, Width = dimensions.Width, Next = -1 }, ref previousWord);
+            lineWidth += dimensions.Width;
+            measuredHeight = MathF.Max(measuredHeight, dimensions.Height);
+            measured.MinWidth = MathF.Max(dimensions.Width, measured.MinWidth);
+        }
+
+        measuredWidth = MathF.Max(lineWidth, measuredWidth) - config.LetterSpacing;
+
+        measured.MeasuredWordsStartIndex = tempWord.Next;
+        measured.UnwrappedDimensions.Width = measuredWidth;
+        measured.UnwrappedDimensions.Height = measuredHeight;
+
+        // In C the `measured` pointer aliases the array slot; write the computed values back.
+        context.MeasureTextHashMapInternal.InternalArray[newItemIndex] = measured;
+
+        if (elementIndexPrevious != 0)
+        {
+            var previousHashEntry = context.MeasureTextHashMapInternal.InternalArray[elementIndexPrevious];
+            previousHashEntry.NextIndex = newItemIndex;
+            context.MeasureTextHashMapInternal.InternalArray[elementIndexPrevious] = previousHashEntry;
+        }
+        else
+        {
+            context.MeasureTextHashMap.InternalArray[hashBucket] = newItemIndex;
+        }
+        return measured;
+    }
+
+    // -------------------------------------
+    // Element declaration ------------------
+    // -------------------------------------
+
+    internal static SizingAxis __GetElementSizing(LayoutElement element, bool xAxis)
+    {
+        if (element.IsTextElement) return default;
+        return xAxis ? element.Config.Layout.Sizing.Width : element.Config.Layout.Sizing.Height;
+    }
+
+    internal static void __OpenElement()
+    {
+        var context = GetCurrentContext()!;
+        if (context.LayoutElements.Length == context.LayoutElements.Capacity - 1 || context.BooleanWarnings.MaxElementsExceeded)
+        {
+            context.BooleanWarnings.MaxElementsExceeded = true;
+            return;
+        }
+
+        var openLayoutElement = new LayoutElement();
+        context.LayoutElements.Add(openLayoutElement);
+        openLayoutElement.Index = context.LayoutElements.Length - 1;
+        context.OpenLayoutElementStack.Add(context.LayoutElements.Length - 1);
+
+        // Generate an ID.
+        LayoutElement parentElement = context.LayoutElements.InternalArray[context.OpenLayoutElementStack.GetValue(context.OpenLayoutElementStack.Length - 2)];
+        uint offset = (uint)(parentElement.Children.Length + parentElement.FloatingChildrenCount);
+        ElementId elementId = __HashNumber(offset, parentElement.Id);
+        openLayoutElement.Id = elementId.Id;
+        __AddHashMapItem(elementId, openLayoutElement, openLayoutElement.Index);
+
+        if (context.OpenClipElementStack.Length > 0)
+        {
+            context.LayoutElementClipElementIds.Set(context.LayoutElements.Length - 1, context.OpenClipElementStack.GetValue(context.OpenClipElementStack.Length - 1));
+        }
+        else
+        {
+            context.LayoutElementClipElementIds.Set(context.LayoutElements.Length - 1, 0);
+        }
+    }
+
+    internal static void __OpenElementWithId(ElementId elementId)
+    {
+        var context = GetCurrentContext()!;
+        if (context.LayoutElements.Length == context.LayoutElements.Capacity - 1 || context.BooleanWarnings.MaxElementsExceeded)
+        {
+            context.BooleanWarnings.MaxElementsExceeded = true;
+            return;
+        }
+
+        var openLayoutElement = new LayoutElement { Id = elementId.Id };
+        context.LayoutElements.Add(openLayoutElement);
+        openLayoutElement.Index = context.LayoutElements.Length - 1;
+        context.OpenLayoutElementStack.Add(context.LayoutElements.Length - 1);
+        __AddHashMapItem(elementId, openLayoutElement, openLayoutElement.Index);
+
+        if (context.OpenClipElementStack.Length > 0)
+        {
+            context.LayoutElementClipElementIds.Set(context.LayoutElements.Length - 1, context.OpenClipElementStack.GetValue(context.OpenClipElementStack.Length - 1));
+        }
+        else
+        {
+            context.LayoutElementClipElementIds.Set(context.LayoutElements.Length - 1, 0);
+        }
+    }
+
+    internal static void __OpenTextElement(string text, TextElementConfig textConfig)
+    {
+        var context = GetCurrentContext()!;
+        if (context.LayoutElements.Length == context.LayoutElements.Capacity - 1 || context.BooleanWarnings.MaxElementsExceeded)
+        {
+            context.BooleanWarnings.MaxElementsExceeded = true;
+            return;
+        }
+
+        LayoutElement parentElement = __GetOpenLayoutElement();
+
+        var textElement = new LayoutElement { TextConfig = textConfig, IsTextElement = true };
+        context.LayoutElements.Add(textElement);
+        textElement.Index = context.LayoutElements.Length - 1;
+
+        if (context.OpenClipElementStack.Length > 0)
+        {
+            context.LayoutElementClipElementIds.Set(context.LayoutElements.Length - 1, context.OpenClipElementStack.GetValue(context.OpenClipElementStack.Length - 1));
+        }
+        else
+        {
+            context.LayoutElementClipElementIds.Set(context.LayoutElements.Length - 1, 0);
+        }
+
+        context.LayoutElementChildrenBuffer.Add(context.LayoutElements.Length - 1);
+
+        MeasureTextCacheItem textMeasured = __MeasureTextCached(text, textConfig);
+        ElementId elementId = __HashNumber((uint)(parentElement.Children.Length + parentElement.FloatingChildrenCount), parentElement.Id);
+        textElement.Id = elementId.Id;
+        __AddHashMapItem(elementId, textElement, textElement.Index);
+
+        Dimensions textDimensions = new Dimensions
+        {
+            Width = textMeasured.UnwrappedDimensions.Width,
+            Height = textConfig.LineHeight > 0 ? textConfig.LineHeight : textMeasured.UnwrappedDimensions.Height,
+        };
+        textElement.Dimensions = textDimensions;
+        textElement.MinDimensions = new Dimensions { Width = textMeasured.MinWidth, Height = textDimensions.Height };
+        textElement.TextElementData = new TextElementData { Text = text, PreferredDimensions = textMeasured.UnwrappedDimensions };
+        parentElement.Children.Length++;
+    }
+
+    internal static void __ConfigureOpenElementPtr(in ElementDeclaration declaration)
+    {
+        var context = GetCurrentContext()!;
+        LayoutElement openLayoutElement = __GetOpenLayoutElement();
+        openLayoutElement.Config = declaration;
+
+        if ((declaration.Layout.Sizing.Width.Type == SizingType.Percent && declaration.Layout.Sizing.Width.Percent > 1)
+            || (declaration.Layout.Sizing.Height.Type == SizingType.Percent && declaration.Layout.Sizing.Height.Percent > 1))
+        {
+            context.Error(ErrorType.PercentageOver1,
+                "An element was configured with SIZING_PERCENT, but the provided percentage value was over 1.0. Clay expects a value between 0 and 1, i.e. 20% is 0.2.");
+        }
+
+        if (declaration.Floating.AttachTo != FloatingAttachToElement.None)
+        {
+            ref FloatingElementConfig floatingConfig = ref openLayoutElement.Config.Floating;
+            // The depth of the tree will always be at least 2 here (auto generated root element).
+            LayoutElement hierarchicalParent = context.LayoutElements.InternalArray[context.OpenLayoutElementStack.GetValue(context.OpenLayoutElementStack.Length - 2)];
+            if (hierarchicalParent != null)
+            {
+                int clipElementId = 0;
+                if (declaration.Floating.AttachTo == FloatingAttachToElement.Parent)
+                {
+                    // Attach to the element's direct hierarchical parent.
+                    floatingConfig.ParentId = hierarchicalParent.Id;
+                    if (context.OpenClipElementStack.Length > 0)
                     {
-                        context.measureTextHashMap.internalArray[hashBucket] = nextIndex;
+                        clipElementId = context.OpenClipElementStack.GetValue(context.OpenClipElementStack.Length - 1);
+                    }
+                }
+                else if (declaration.Floating.AttachTo == FloatingAttachToElement.ElementWithId)
+                {
+                    ref LayoutElementHashMapItem parentItem = ref __GetHashMapItem(floatingConfig.ParentId);
+                    if (Unsafe.IsNullRef(in parentItem))
+                    {
+                        context.Error(ErrorType.FloatingContainerParentNotFound,
+                            "A floating element was declared with a parentId, but no element with that ID was found.");
                     }
                     else
                     {
-                        var previousHashEntry = context.measureTextHashMapInternal.internalArray[elementIndexPrevious];
-                        previousHashEntry.nextIndex = nextIndex;
-                        context.measureTextHashMapInternal.internalArray[elementIndexPrevious] = previousHashEntry;
+                        clipElementId = context.LayoutElementClipElementIds.GetValue(parentItem.LayoutElementIndex);
                     }
-                    elementIndex = nextIndex;
                 }
-                else
+                else if (declaration.Floating.AttachTo == FloatingAttachToElement.Root)
                 {
-                    elementIndexPrevious = elementIndex;
-                    elementIndex = hashEntry.nextIndex;
+                    floatingConfig.ParentId = __HashString("_RootContainer", 0).Id;
                 }
-            }
 
-            int newItemIndex;
-            var measured = new Clay__MeasureTextCacheItem { measuredWordsStartIndex = -1, id = id, generation = context.generation };
-            if (context.measureTextHashMapInternalFreeList.length > 0)
-            {
-                newItemIndex = context.measureTextHashMapInternalFreeList.internalArray[context.measureTextHashMapInternalFreeList.length - 1];
-                context.measureTextHashMapInternalFreeList.length--;
-                context.measureTextHashMapInternal.internalArray[newItemIndex] = measured;
-            }
-            else
-            {
-                if (context.measureTextHashMapInternal.length == context.measureTextHashMapInternal.capacity - 1)
+                if (declaration.Floating.ClipTo == FloatingClipToElement.None)
                 {
-                    if (!context.booleanWarnings.maxTextMeasureCacheExceeded)
-                    {
-                        context.booleanWarnings.maxTextMeasureCacheExceeded = true;
-                        context.Error(Clay_ErrorType.CLAY_ERROR_TYPE_ELEMENTS_CAPACITY_EXCEEDED,
-                            "Clay ran out of capacity while attempting to measure text elements. Try using Clay_SetMaxElementCount() with a higher value.");
-                    }
-                    return default;
+                    clipElementId = 0;
                 }
-                newItemIndex = context.measureTextHashMapInternal.length;
-                context.measureTextHashMapInternal.Add(measured);
-            }
 
-            int start = 0;
-            int end = 0;
-            float lineWidth = 0;
-            float measuredWidth = 0;
-            float measuredHeight = 0;
-            float spaceWidth = s_measureText(new StringSegment(" "), config, context.measureTextUserData).width;
-
-            Clay__MeasuredWord tempWord = default;
-            tempWord.next = -1;
-            ref Clay__MeasuredWord previousWord = ref tempWord;
-
-            while (end < text.Length)
-            {
-                if (context.measuredWords.length == context.measuredWords.capacity - 1)
+                int currentElementIndex = context.OpenLayoutElementStack.GetValue(context.OpenLayoutElementStack.Length - 1);
+                context.LayoutElementClipElementIds.Set(currentElementIndex, clipElementId);
+                context.OpenClipElementStack.Add(clipElementId);
+                context.LayoutElementTreeRoots.Add(new LayoutElementTreeRoot
                 {
-                    if (!context.booleanWarnings.maxTextMeasureCacheExceeded)
-                    {
-                        context.booleanWarnings.maxTextMeasureCacheExceeded = true;
-                        context.Error(Clay_ErrorType.CLAY_ERROR_TYPE_TEXT_MEASUREMENT_CAPACITY_EXCEEDED,
-                            "Clay has run out of space in it's internal text measurement cache. Try using Clay_SetMaxMeasureTextCacheWordCount() (default 16384, with 1 unit storing 1 measured word).");
-                    }
-                    return default;
-                }
-
-                char current = text[end];
-                if (current == ' ' || current == '\n')
-                {
-                    int length = end - start;
-                    Clay_Dimensions dimensions = default;
-                    if (length > 0)
-                    {
-                        dimensions = s_measureText(new StringSegment(text, start, length), config, context.measureTextUserData);
-                    }
-                    measured.minWidth = MathF.Max(dimensions.width, measured.minWidth);
-                    measuredHeight = MathF.Max(measuredHeight, dimensions.height);
-                    if (current == ' ')
-                    {
-                        dimensions.width += spaceWidth;
-                        previousWord = ref __AddMeasuredWord(new Clay__MeasuredWord { startOffset = start, length = length + 1, width = dimensions.width, next = -1 }, ref previousWord);
-                        lineWidth += dimensions.width;
-                    }
-                    if (current == '\n')
-                    {
-                        if (length > 0)
-                        {
-                            previousWord = ref __AddMeasuredWord(new Clay__MeasuredWord { startOffset = start, length = length, width = dimensions.width, next = -1 }, ref previousWord);
-                        }
-                        previousWord = ref __AddMeasuredWord(new Clay__MeasuredWord { startOffset = end + 1, length = 0, width = 0, next = -1 }, ref previousWord);
-                        lineWidth += dimensions.width;
-                        measuredWidth = MathF.Max(lineWidth, measuredWidth);
-                        measured.containsNewlines = true;
-                        lineWidth = 0;
-                    }
-                    start = end + 1;
-                }
-                end++;
-            }
-
-            if (end - start > 0)
-            {
-                Clay_Dimensions dimensions = s_measureText(new StringSegment(text, start, end - start), config, context.measureTextUserData);
-                __AddMeasuredWord(new Clay__MeasuredWord { startOffset = start, length = end - start, width = dimensions.width, next = -1 }, ref previousWord);
-                lineWidth += dimensions.width;
-                measuredHeight = MathF.Max(measuredHeight, dimensions.height);
-                measured.minWidth = MathF.Max(dimensions.width, measured.minWidth);
-            }
-
-            measuredWidth = MathF.Max(lineWidth, measuredWidth) - config.letterSpacing;
-
-            measured.measuredWordsStartIndex = tempWord.next;
-            measured.unwrappedDimensions.width = measuredWidth;
-            measured.unwrappedDimensions.height = measuredHeight;
-
-            // In C the `measured` pointer aliases the array slot; write the computed values back.
-            context.measureTextHashMapInternal.internalArray[newItemIndex] = measured;
-
-            if (elementIndexPrevious != 0)
-            {
-                var previousHashEntry = context.measureTextHashMapInternal.internalArray[elementIndexPrevious];
-                previousHashEntry.nextIndex = newItemIndex;
-                context.measureTextHashMapInternal.internalArray[elementIndexPrevious] = previousHashEntry;
-            }
-            else
-            {
-                context.measureTextHashMap.internalArray[hashBucket] = newItemIndex;
-            }
-            return measured;
-        }
-
-        // -------------------------------------
-        // Element declaration ------------------
-        // -------------------------------------
-
-        internal static Clay_SizingAxis __GetElementSizing(Clay_LayoutElement element, bool xAxis)
-        {
-            if (element.isTextElement) return default;
-            return xAxis ? element.config.layout.sizing.width : element.config.layout.sizing.height;
-        }
-
-        internal static void __OpenElement()
-        {
-            var context = GetCurrentContext()!;
-            if (context.layoutElements.length == context.layoutElements.capacity - 1 || context.booleanWarnings.maxElementsExceeded)
-            {
-                context.booleanWarnings.maxElementsExceeded = true;
-                return;
-            }
-
-            var openLayoutElement = new Clay_LayoutElement();
-            context.layoutElements.Add(openLayoutElement);
-            openLayoutElement.index = context.layoutElements.length - 1;
-            context.openLayoutElementStack.Add(context.layoutElements.length - 1);
-
-            // Generate an ID.
-            Clay_LayoutElement parentElement = context.layoutElements.internalArray[context.openLayoutElementStack.GetValue(context.openLayoutElementStack.length - 2)];
-            uint offset = (uint)(parentElement.children.length + parentElement.floatingChildrenCount);
-            Clay_ElementId elementId = __HashNumber(offset, parentElement.id);
-            openLayoutElement.id = elementId.id;
-            __AddHashMapItem(elementId, openLayoutElement, openLayoutElement.index);
-
-            if (context.openClipElementStack.length > 0)
-            {
-                context.layoutElementClipElementIds.Set(context.layoutElements.length - 1, context.openClipElementStack.GetValue(context.openClipElementStack.length - 1));
-            }
-            else
-            {
-                context.layoutElementClipElementIds.Set(context.layoutElements.length - 1, 0);
+                    LayoutElementIndex = context.OpenLayoutElementStack.GetValue(context.OpenLayoutElementStack.Length - 1),
+                    ParentId = floatingConfig.ParentId,
+                    ClipElementId = (uint)clipElementId,
+                    ZIndex = floatingConfig.ZIndex,
+                });
             }
         }
 
-        internal static void __OpenElementWithId(Clay_ElementId elementId)
+        if (declaration.Clip.Horizontal || declaration.Clip.Vertical)
         {
-            var context = GetCurrentContext()!;
-            if (context.layoutElements.length == context.layoutElements.capacity - 1 || context.booleanWarnings.maxElementsExceeded)
+            context.OpenClipElementStack.Add((int)openLayoutElement.Id);
+            // Retrieve or create cached data to track scroll position across frames.
+            ref ScrollContainerDataInternal scrollOffset = ref Unsafe.NullRef<ScrollContainerDataInternal>();
+            for (int i = 0; i < context.ScrollContainerDatas.Length; i++)
             {
-                context.booleanWarnings.maxElementsExceeded = true;
-                return;
+                ref ScrollContainerDataInternal mapping = ref context.ScrollContainerDatas.InternalArray[i];
+                if (openLayoutElement.Id == mapping.ElementId)
+                {
+                    scrollOffset = ref mapping;
+                    scrollOffset.LayoutElement = openLayoutElement;
+                    scrollOffset.OpenThisFrame = true;
+                }
             }
-
-            var openLayoutElement = new Clay_LayoutElement { id = elementId.id };
-            context.layoutElements.Add(openLayoutElement);
-            openLayoutElement.index = context.layoutElements.length - 1;
-            context.openLayoutElementStack.Add(context.layoutElements.length - 1);
-            __AddHashMapItem(elementId, openLayoutElement, openLayoutElement.index);
-
-            if (context.openClipElementStack.length > 0)
+            if (Unsafe.IsNullRef(in scrollOffset))
             {
-                context.layoutElementClipElementIds.Set(context.layoutElements.length - 1, context.openClipElementStack.GetValue(context.openClipElementStack.length - 1));
+                scrollOffset = ref context.ScrollContainerDatas.Add(new ScrollContainerDataInternal
+                {
+                    LayoutElement = openLayoutElement,
+                    ScrollOrigin = new Vector2(-1, -1),
+                    ElementId = openLayoutElement.Id,
+                    OpenThisFrame = true,
+                });
             }
-            else
+            if (context.ExternalScrollHandlingEnabled)
             {
-                context.layoutElementClipElementIds.Set(context.layoutElements.length - 1, 0);
+                scrollOffset.ScrollPosition = SQueryScrollOffset!(scrollOffset.ElementId, context.QueryScrollOffsetUserData);
             }
         }
 
-        internal static void __OpenTextElement(string text, Clay_TextElementConfig textConfig)
+        // Setup data to track transitions across frames.
+        if (declaration.Transition.Handler != null)
         {
-            var context = GetCurrentContext()!;
-            if (context.layoutElements.length == context.layoutElements.capacity - 1 || context.booleanWarnings.maxElementsExceeded)
+            ref TransitionDataInternal transitionData = ref Unsafe.NullRef<TransitionDataInternal>();
+            LayoutElement parentElement = __GetParentElement();
+            for (int i = 0; i < context.TransitionDatas.Length; i++)
             {
-                context.booleanWarnings.maxElementsExceeded = true;
-                return;
-            }
-
-            Clay_LayoutElement parentElement = __GetOpenLayoutElement();
-
-            var textElement = new Clay_LayoutElement { textConfig = textConfig, isTextElement = true };
-            context.layoutElements.Add(textElement);
-            textElement.index = context.layoutElements.length - 1;
-
-            if (context.openClipElementStack.length > 0)
-            {
-                context.layoutElementClipElementIds.Set(context.layoutElements.length - 1, context.openClipElementStack.GetValue(context.openClipElementStack.length - 1));
-            }
-            else
-            {
-                context.layoutElementClipElementIds.Set(context.layoutElements.length - 1, 0);
-            }
-
-            context.layoutElementChildrenBuffer.Add(context.layoutElements.length - 1);
-
-            Clay__MeasureTextCacheItem textMeasured = __MeasureTextCached(text, textConfig);
-            Clay_ElementId elementId = __HashNumber((uint)(parentElement.children.length + parentElement.floatingChildrenCount), parentElement.id);
-            textElement.id = elementId.id;
-            __AddHashMapItem(elementId, textElement, textElement.index);
-
-            Clay_Dimensions textDimensions = new Clay_Dimensions
-            {
-                width = textMeasured.unwrappedDimensions.width,
-                height = textConfig.lineHeight > 0 ? textConfig.lineHeight : textMeasured.unwrappedDimensions.height,
-            };
-            textElement.dimensions = textDimensions;
-            textElement.minDimensions = new Clay_Dimensions { width = textMeasured.minWidth, height = textDimensions.height };
-            textElement.textElementData = new Clay__TextElementData { text = text, preferredDimensions = textMeasured.unwrappedDimensions };
-            parentElement.children.length++;
-        }
-
-        internal static void __ConfigureOpenElementPtr(in Clay_ElementDeclaration declaration)
-        {
-            var context = GetCurrentContext()!;
-            Clay_LayoutElement openLayoutElement = __GetOpenLayoutElement();
-            openLayoutElement.config = declaration;
-
-            if ((declaration.layout.sizing.width.type == Clay__SizingType.CLAY__SIZING_TYPE_PERCENT && declaration.layout.sizing.width.percent > 1)
-                || (declaration.layout.sizing.height.type == Clay__SizingType.CLAY__SIZING_TYPE_PERCENT && declaration.layout.sizing.height.percent > 1))
-            {
-                context.Error(Clay_ErrorType.CLAY_ERROR_TYPE_PERCENTAGE_OVER_1,
-                    "An element was configured with CLAY_SIZING_PERCENT, but the provided percentage value was over 1.0. Clay expects a value between 0 and 1, i.e. 20% is 0.2.");
-            }
-
-            if (declaration.floating.attachTo != Clay_FloatingAttachToElement.CLAY_ATTACH_TO_NONE)
-            {
-                ref Clay_FloatingElementConfig floatingConfig = ref openLayoutElement.config.floating;
-                // The depth of the tree will always be at least 2 here (auto generated root element).
-                Clay_LayoutElement hierarchicalParent = context.layoutElements.internalArray[context.openLayoutElementStack.GetValue(context.openLayoutElementStack.length - 2)];
-                if (hierarchicalParent != null)
+                ref TransitionDataInternal existingData = ref context.TransitionDatas.InternalArray[i];
+                if (openLayoutElement.Id == existingData.ElementId)
                 {
-                    int clipElementId = 0;
-                    if (declaration.floating.attachTo == Clay_FloatingAttachToElement.CLAY_ATTACH_TO_PARENT)
+                    if (existingData.State == TransitionState.Exiting)
                     {
-                        // Attach to the element's direct hierarchical parent.
-                        floatingConfig.parentId = hierarchicalParent.id;
-                        if (context.openClipElementStack.length > 0)
-                        {
-                            clipElementId = context.openClipElementStack.GetValue(context.openClipElementStack.length - 1);
-                        }
+                        existingData.State = TransitionState.Idle;
+                        ref LayoutElementHashMapItem hashMapItem = ref __GetHashMapItem(openLayoutElement.Id);
+                        if (!Unsafe.IsNullRef(in hashMapItem)) hashMapItem.AppearedThisFrame = false;
                     }
-                    else if (declaration.floating.attachTo == Clay_FloatingAttachToElement.CLAY_ATTACH_TO_ELEMENT_WITH_ID)
+                    transitionData = ref existingData;
+                    transitionData.ElementThisFrame = openLayoutElement;
+                    if (transitionData.ParentId != parentElement.Id)
                     {
-                        ref Clay_LayoutElementHashMapItem parentItem = ref __GetHashMapItem(floatingConfig.parentId);
-                        if (Unsafe.IsNullRef(in parentItem))
-                        {
-                            context.Error(Clay_ErrorType.CLAY_ERROR_TYPE_FLOATING_CONTAINER_PARENT_NOT_FOUND,
-                                "A floating element was declared with a parentId, but no element with that ID was found.");
-                        }
-                        else
-                        {
-                            clipElementId = context.layoutElementClipElementIds.GetValue(parentItem.layoutElementIndex);
-                        }
+                        transitionData.Reparented = true;
                     }
-                    else if (declaration.floating.attachTo == Clay_FloatingAttachToElement.CLAY_ATTACH_TO_ROOT)
-                    {
-                        floatingConfig.parentId = __HashString("Clay__RootContainer", 0).id;
-                    }
-
-                    if (declaration.floating.clipTo == Clay_FloatingClipToElement.CLAY_CLIP_TO_NONE)
-                    {
-                        clipElementId = 0;
-                    }
-
-                    int currentElementIndex = context.openLayoutElementStack.GetValue(context.openLayoutElementStack.length - 1);
-                    context.layoutElementClipElementIds.Set(currentElementIndex, clipElementId);
-                    context.openClipElementStack.Add(clipElementId);
-                    context.layoutElementTreeRoots.Add(new Clay__LayoutElementTreeRoot
-                    {
-                        layoutElementIndex = context.openLayoutElementStack.GetValue(context.openLayoutElementStack.length - 1),
-                        parentId = floatingConfig.parentId,
-                        clipElementId = (uint)clipElementId,
-                        zIndex = floatingConfig.zIndex,
-                    });
+                    transitionData.ParentId = parentElement.Id;
+                    transitionData.SiblingIndex = parentElement.Children.Length;
+                    transitionData.TransitionOut = declaration.Transition.Exit.SetFinalState != null;
                 }
             }
-
-            if (declaration.clip.horizontal || declaration.clip.vertical)
+            if (Unsafe.IsNullRef(in transitionData))
             {
-                context.openClipElementStack.Add((int)openLayoutElement.id);
-                // Retrieve or create cached data to track scroll position across frames.
-                ref Clay__ScrollContainerDataInternal scrollOffset = ref Unsafe.NullRef<Clay__ScrollContainerDataInternal>();
-                for (int i = 0; i < context.scrollContainerDatas.length; i++)
+                transitionData = ref context.TransitionDatas.Add(new TransitionDataInternal
                 {
-                    ref Clay__ScrollContainerDataInternal mapping = ref context.scrollContainerDatas.internalArray[i];
-                    if (openLayoutElement.id == mapping.elementId)
-                    {
-                        scrollOffset = ref mapping;
-                        scrollOffset.layoutElement = openLayoutElement;
-                        scrollOffset.openThisFrame = true;
-                    }
-                }
-                if (Unsafe.IsNullRef(in scrollOffset))
-                {
-                    scrollOffset = ref context.scrollContainerDatas.Add(new Clay__ScrollContainerDataInternal
-                    {
-                        layoutElement = openLayoutElement,
-                        scrollOrigin = new Vector2(-1, -1),
-                        elementId = openLayoutElement.id,
-                        openThisFrame = true,
-                    });
-                }
-                if (context.externalScrollHandlingEnabled)
-                {
-                    scrollOffset.scrollPosition = s_queryScrollOffset!(scrollOffset.elementId, context.queryScrollOffsetUserData);
-                }
-            }
-
-            // Setup data to track transitions across frames.
-            if (declaration.transition.handler != null)
-            {
-                ref Clay__TransitionDataInternal transitionData = ref Unsafe.NullRef<Clay__TransitionDataInternal>();
-                Clay_LayoutElement parentElement = __GetParentElement();
-                for (int i = 0; i < context.transitionDatas.length; i++)
-                {
-                    ref Clay__TransitionDataInternal existingData = ref context.transitionDatas.internalArray[i];
-                    if (openLayoutElement.id == existingData.elementId)
-                    {
-                        if (existingData.state == Clay_TransitionState.CLAY_TRANSITION_STATE_EXITING)
-                        {
-                            existingData.state = Clay_TransitionState.CLAY_TRANSITION_STATE_IDLE;
-                            ref Clay_LayoutElementHashMapItem hashMapItem = ref __GetHashMapItem(openLayoutElement.id);
-                            if (!Unsafe.IsNullRef(in hashMapItem)) hashMapItem.appearedThisFrame = false;
-                        }
-                        transitionData = ref existingData;
-                        transitionData.elementThisFrame = openLayoutElement;
-                        if (transitionData.parentId != parentElement.id)
-                        {
-                            transitionData.reparented = true;
-                        }
-                        transitionData.parentId = parentElement.id;
-                        transitionData.siblingIndex = parentElement.children.length;
-                        transitionData.transitionOut = declaration.transition.exit.setFinalState != null;
-                    }
-                }
-                if (Unsafe.IsNullRef(in transitionData))
-                {
-                    transitionData = ref context.transitionDatas.Add(new Clay__TransitionDataInternal
-                    {
-                        elementThisFrame = openLayoutElement,
-                        elementId = openLayoutElement.id,
-                        parentId = parentElement.id,
-                        siblingIndex = parentElement.children.length,
-                        transitionOut = declaration.transition.exit.setFinalState != null,
-                    });
-                }
+                    ElementThisFrame = openLayoutElement,
+                    ElementId = openLayoutElement.Id,
+                    ParentId = parentElement.Id,
+                    SiblingIndex = parentElement.Children.Length,
+                    TransitionOut = declaration.Transition.Exit.SetFinalState != null,
+                });
             }
         }
+    }
 
-        internal static void __ConfigureOpenElement(Clay_ElementDeclaration declaration) => __ConfigureOpenElementPtr(in declaration);
+    internal static void __ConfigureOpenElement(ElementDeclaration declaration) => __ConfigureOpenElementPtr(in declaration);
 
-        internal static void __CloseElement()
+    internal static void __CloseElement()
+    {
+        var context = GetCurrentContext()!;
+        if (context.BooleanWarnings.MaxElementsExceeded) return;
+
+        LayoutElement openLayoutElement = __GetOpenLayoutElement();
+        ref LayoutConfig layoutConfig = ref openLayoutElement.Config.Layout;
+        bool elementHasClipHorizontal = openLayoutElement.Config.Clip.Horizontal;
+        bool elementHasClipVertical = openLayoutElement.Config.Clip.Vertical;
+        if (elementHasClipHorizontal || elementHasClipVertical || openLayoutElement.Config.Floating.AttachTo != FloatingAttachToElement.None)
         {
-            var context = GetCurrentContext()!;
-            if (context.booleanWarnings.maxElementsExceeded) return;
+            context.OpenClipElementStack.Length--;
+        }
 
-            Clay_LayoutElement openLayoutElement = __GetOpenLayoutElement();
-            ref Clay_LayoutConfig layoutConfig = ref openLayoutElement.config.layout;
-            bool elementHasClipHorizontal = openLayoutElement.config.clip.horizontal;
-            bool elementHasClipVertical = openLayoutElement.config.clip.vertical;
-            if (elementHasClipHorizontal || elementHasClipVertical || openLayoutElement.config.floating.attachTo != Clay_FloatingAttachToElement.CLAY_ATTACH_TO_NONE)
+        float leftRightPadding = layoutConfig.Padding.Left + layoutConfig.Padding.Right;
+        float topBottomPadding = layoutConfig.Padding.Top + layoutConfig.Padding.Bottom;
+
+        // Attach children to the current open element.
+        openLayoutElement.Children.Elements = context.LayoutElementChildren.InternalArray;
+        openLayoutElement.Children.Offset = context.LayoutElementChildren.Length;
+
+        if (layoutConfig.LayoutDirection == LayoutDirection.LeftToRight)
+        {
+            openLayoutElement.Dimensions.Width = leftRightPadding;
+            openLayoutElement.MinDimensions.Width = leftRightPadding;
+            for (int i = 0; i < openLayoutElement.Children.Length; i++)
             {
-                context.openClipElementStack.length--;
-            }
-
-            float leftRightPadding = layoutConfig.padding.left + layoutConfig.padding.right;
-            float topBottomPadding = layoutConfig.padding.top + layoutConfig.padding.bottom;
-
-            // Attach children to the current open element.
-            openLayoutElement.children.elements = context.layoutElementChildren.internalArray;
-            openLayoutElement.children.offset = context.layoutElementChildren.length;
-
-            if (layoutConfig.layoutDirection == Clay_LayoutDirection.CLAY_LEFT_TO_RIGHT)
-            {
-                openLayoutElement.dimensions.width = leftRightPadding;
-                openLayoutElement.minDimensions.width = leftRightPadding;
-                for (int i = 0; i < openLayoutElement.children.length; i++)
-                {
-                    int childIndex = context.layoutElementChildrenBuffer.GetValue(context.layoutElementChildrenBuffer.length - openLayoutElement.children.length + i);
-                    Clay_LayoutElement child = context.layoutElements.internalArray[childIndex];
-                    openLayoutElement.dimensions.width += child.dimensions.width;
-                    openLayoutElement.dimensions.height = MathF.Max(openLayoutElement.dimensions.height, child.dimensions.height + topBottomPadding);
-                    // Minimum size of child elements doesn't matter to clip containers as they can shrink and hide their contents.
-                    if (!elementHasClipHorizontal)
-                    {
-                        openLayoutElement.minDimensions.width += child.minDimensions.width;
-                    }
-                    if (!elementHasClipVertical)
-                    {
-                        openLayoutElement.minDimensions.height = MathF.Max(openLayoutElement.minDimensions.height, child.minDimensions.height + topBottomPadding);
-                    }
-                    context.layoutElementChildren.Add(child);
-                }
-                float childGap = MathF.Max(openLayoutElement.children.length - 1, 0) * layoutConfig.childGap;
-                openLayoutElement.dimensions.width += childGap;
+                int childIndex = context.LayoutElementChildrenBuffer.GetValue(context.LayoutElementChildrenBuffer.Length - openLayoutElement.Children.Length + i);
+                LayoutElement child = context.LayoutElements.InternalArray[childIndex];
+                openLayoutElement.Dimensions.Width += child.Dimensions.Width;
+                openLayoutElement.Dimensions.Height = MathF.Max(openLayoutElement.Dimensions.Height, child.Dimensions.Height + topBottomPadding);
+                // Minimum size of child elements doesn't matter to clip containers as they can shrink and hide their contents.
                 if (!elementHasClipHorizontal)
                 {
-                    openLayoutElement.minDimensions.width += childGap;
+                    openLayoutElement.MinDimensions.Width += child.MinDimensions.Width;
                 }
-            }
-            else if (layoutConfig.layoutDirection == Clay_LayoutDirection.CLAY_TOP_TO_BOTTOM)
-            {
-                openLayoutElement.dimensions.height = topBottomPadding;
-                openLayoutElement.minDimensions.height = topBottomPadding;
-                for (int i = 0; i < openLayoutElement.children.length; i++)
-                {
-                    int childIndex = context.layoutElementChildrenBuffer.GetValue(context.layoutElementChildrenBuffer.length - openLayoutElement.children.length + i);
-                    Clay_LayoutElement child = context.layoutElements.internalArray[childIndex];
-                    openLayoutElement.dimensions.height += child.dimensions.height;
-                    openLayoutElement.dimensions.width = MathF.Max(openLayoutElement.dimensions.width, child.dimensions.width + leftRightPadding);
-                    if (!elementHasClipVertical)
-                    {
-                        openLayoutElement.minDimensions.height += child.minDimensions.height;
-                    }
-                    if (!elementHasClipHorizontal)
-                    {
-                        openLayoutElement.minDimensions.width = MathF.Max(openLayoutElement.minDimensions.width, child.minDimensions.width + leftRightPadding);
-                    }
-                    context.layoutElementChildren.Add(child);
-                }
-                float childGap = MathF.Max(openLayoutElement.children.length - 1, 0) * layoutConfig.childGap;
-                openLayoutElement.dimensions.height += childGap;
                 if (!elementHasClipVertical)
                 {
-                    openLayoutElement.minDimensions.height += childGap;
+                    openLayoutElement.MinDimensions.Height = MathF.Max(openLayoutElement.MinDimensions.Height, child.MinDimensions.Height + topBottomPadding);
                 }
+                context.LayoutElementChildren.Add(child);
             }
-
-            context.layoutElementChildrenBuffer.length -= openLayoutElement.children.length;
-
-            // Clamp element min and max width to the values configured in the layout.
-            if (layoutConfig.sizing.width.type != Clay__SizingType.CLAY__SIZING_TYPE_PERCENT)
+            float childGap = MathF.Max(openLayoutElement.Children.Length - 1, 0) * layoutConfig.ChildGap;
+            openLayoutElement.Dimensions.Width += childGap;
+            if (!elementHasClipHorizontal)
             {
-                if (layoutConfig.sizing.width.minMax.max <= 0) layoutConfig.sizing.width.minMax.max = CLAY__MAXFLOAT;
-                openLayoutElement.dimensions.width = MathF.Min(MathF.Max(openLayoutElement.dimensions.width, layoutConfig.sizing.width.minMax.min), layoutConfig.sizing.width.minMax.max);
-                openLayoutElement.minDimensions.width = MathF.Min(MathF.Max(openLayoutElement.minDimensions.width, layoutConfig.sizing.width.minMax.min), layoutConfig.sizing.width.minMax.max);
+                openLayoutElement.MinDimensions.Width += childGap;
             }
-            else
+        }
+        else if (layoutConfig.LayoutDirection == LayoutDirection.TopToBottom)
+        {
+            openLayoutElement.Dimensions.Height = topBottomPadding;
+            openLayoutElement.MinDimensions.Height = topBottomPadding;
+            for (int i = 0; i < openLayoutElement.Children.Length; i++)
             {
-                openLayoutElement.dimensions.width = 0;
-            }
-
-            // Clamp element min and max height to the values configured in the layout.
-            if (layoutConfig.sizing.height.type != Clay__SizingType.CLAY__SIZING_TYPE_PERCENT)
-            {
-                if (layoutConfig.sizing.height.minMax.max <= 0) layoutConfig.sizing.height.minMax.max = CLAY__MAXFLOAT;
-                openLayoutElement.dimensions.height = MathF.Min(MathF.Max(openLayoutElement.dimensions.height, layoutConfig.sizing.height.minMax.min), layoutConfig.sizing.height.minMax.max);
-                openLayoutElement.minDimensions.height = MathF.Min(MathF.Max(openLayoutElement.minDimensions.height, layoutConfig.sizing.height.minMax.min), layoutConfig.sizing.height.minMax.max);
-            }
-            else
-            {
-                openLayoutElement.dimensions.height = 0;
-            }
-
-            __UpdateAspectRatioBox(openLayoutElement);
-
-            bool elementIsFloating = openLayoutElement.config.floating.attachTo != Clay_FloatingAttachToElement.CLAY_ATTACH_TO_NONE;
-
-            // Close the currently open element.
-            int closingElementIndex = context.openLayoutElementStack.RemoveSwapback(context.openLayoutElementStack.length - 1);
-
-            // Get the currently open parent.
-            openLayoutElement = __GetOpenLayoutElement();
-
-            if (context.openLayoutElementStack.length > 1)
-            {
-                if (elementIsFloating)
+                int childIndex = context.LayoutElementChildrenBuffer.GetValue(context.LayoutElementChildrenBuffer.Length - openLayoutElement.Children.Length + i);
+                LayoutElement child = context.LayoutElements.InternalArray[childIndex];
+                openLayoutElement.Dimensions.Height += child.Dimensions.Height;
+                openLayoutElement.Dimensions.Width = MathF.Max(openLayoutElement.Dimensions.Width, child.Dimensions.Width + leftRightPadding);
+                if (!elementHasClipVertical)
                 {
-                    openLayoutElement.floatingChildrenCount++;
-                    return;
+                    openLayoutElement.MinDimensions.Height += child.MinDimensions.Height;
                 }
-                openLayoutElement.children.length++;
-                context.layoutElementChildrenBuffer.Add(closingElementIndex);
+                if (!elementHasClipHorizontal)
+                {
+                    openLayoutElement.MinDimensions.Width = MathF.Max(openLayoutElement.MinDimensions.Width, child.MinDimensions.Width + leftRightPadding);
+                }
+                context.LayoutElementChildren.Add(child);
+            }
+            float childGap = MathF.Max(openLayoutElement.Children.Length - 1, 0) * layoutConfig.ChildGap;
+            openLayoutElement.Dimensions.Height += childGap;
+            if (!elementHasClipVertical)
+            {
+                openLayoutElement.MinDimensions.Height += childGap;
             }
         }
 
-        // -------------------------------------
-        // Layout engine ------------------------
-        // -------------------------------------
+        context.LayoutElementChildrenBuffer.Length -= openLayoutElement.Children.Length;
 
-        internal static void __SizeContainersAlongAxis(bool xAxis, bool collectElements, ref ClayArray<int> textElementsOut, ref ClayArray<int> aspectRatioElementsOut)
+        // Clamp element min and max width to the values configured in the layout.
+        if (layoutConfig.Sizing.Width.Type != SizingType.Percent)
         {
-            var context = GetCurrentContext()!;
-            ClayArray<int> bfsBuffer = context.layoutElementChildrenBuffer;
-            ClayArray<int> resizableContainerBuffer = context.openLayoutElementStack;
+            if (layoutConfig.Sizing.Width.MinMax.Max <= 0) layoutConfig.Sizing.Width.MinMax.Max = MaxFloat;
+            openLayoutElement.Dimensions.Width = MathF.Min(MathF.Max(openLayoutElement.Dimensions.Width, layoutConfig.Sizing.Width.MinMax.Min), layoutConfig.Sizing.Width.MinMax.Max);
+            openLayoutElement.MinDimensions.Width = MathF.Min(MathF.Max(openLayoutElement.MinDimensions.Width, layoutConfig.Sizing.Width.MinMax.Min), layoutConfig.Sizing.Width.MinMax.Max);
+        }
+        else
+        {
+            openLayoutElement.Dimensions.Width = 0;
+        }
 
-            for (int rootIndex = 0; rootIndex < context.layoutElementTreeRoots.length; ++rootIndex)
+        // Clamp element min and max height to the values configured in the layout.
+        if (layoutConfig.Sizing.Height.Type != SizingType.Percent)
+        {
+            if (layoutConfig.Sizing.Height.MinMax.Max <= 0) layoutConfig.Sizing.Height.MinMax.Max = MaxFloat;
+            openLayoutElement.Dimensions.Height = MathF.Min(MathF.Max(openLayoutElement.Dimensions.Height, layoutConfig.Sizing.Height.MinMax.Min), layoutConfig.Sizing.Height.MinMax.Max);
+            openLayoutElement.MinDimensions.Height = MathF.Min(MathF.Max(openLayoutElement.MinDimensions.Height, layoutConfig.Sizing.Height.MinMax.Min), layoutConfig.Sizing.Height.MinMax.Max);
+        }
+        else
+        {
+            openLayoutElement.Dimensions.Height = 0;
+        }
+
+        __UpdateAspectRatioBox(openLayoutElement);
+
+        bool elementIsFloating = openLayoutElement.Config.Floating.AttachTo != FloatingAttachToElement.None;
+
+        // Close the currently open element.
+        int closingElementIndex = context.OpenLayoutElementStack.RemoveSwapback(context.OpenLayoutElementStack.Length - 1);
+
+        // Get the currently open parent.
+        openLayoutElement = __GetOpenLayoutElement();
+
+        if (context.OpenLayoutElementStack.Length > 1)
+        {
+            if (elementIsFloating)
             {
-                bfsBuffer.length = 0;
-                Clay__LayoutElementTreeRoot root = context.layoutElementTreeRoots.internalArray[rootIndex];
-                Clay_LayoutElement rootElement = context.layoutElements.internalArray[root.layoutElementIndex];
-                bfsBuffer.Add(root.layoutElementIndex);
+                openLayoutElement.FloatingChildrenCount++;
+                return;
+            }
+            openLayoutElement.Children.Length++;
+            context.LayoutElementChildrenBuffer.Add(closingElementIndex);
+        }
+    }
 
-                // Size floating containers to their parents.
-                if (rootElement.config.floating.attachTo != Clay_FloatingAttachToElement.CLAY_ATTACH_TO_NONE)
+    // -------------------------------------
+    // Layout engine ------------------------
+    // -------------------------------------
+
+    internal static void __SizeContainersAlongAxis(bool xAxis, bool collectElements, ref Array<int> textElementsOut, ref Array<int> aspectRatioElementsOut)
+    {
+        var context = GetCurrentContext()!;
+        Array<int> bfsBuffer = context.LayoutElementChildrenBuffer;
+        Array<int> resizableContainerBuffer = context.OpenLayoutElementStack;
+
+        for (int rootIndex = 0; rootIndex < context.LayoutElementTreeRoots.Length; ++rootIndex)
+        {
+            bfsBuffer.Length = 0;
+            LayoutElementTreeRoot root = context.LayoutElementTreeRoots.InternalArray[rootIndex];
+            LayoutElement rootElement = context.LayoutElements.InternalArray[root.LayoutElementIndex];
+            bfsBuffer.Add(root.LayoutElementIndex);
+
+            // Size floating containers to their parents.
+            if (rootElement.Config.Floating.AttachTo != FloatingAttachToElement.None)
+            {
+                ref FloatingElementConfig floatingElementConfig = ref rootElement.Config.Floating;
+                ref LayoutElementHashMapItem parentItem = ref __GetHashMapItem(floatingElementConfig.ParentId);
+                if (!Unsafe.IsNullRef(in parentItem))
                 {
-                    ref Clay_FloatingElementConfig floatingElementConfig = ref rootElement.config.floating;
-                    ref Clay_LayoutElementHashMapItem parentItem = ref __GetHashMapItem(floatingElementConfig.parentId);
-                    if (!Unsafe.IsNullRef(in parentItem))
+                    LayoutElement parentLayoutElement = parentItem.LayoutElement;
+                    switch (rootElement.Config.Layout.Sizing.Width.Type)
                     {
-                        Clay_LayoutElement parentLayoutElement = parentItem.layoutElement;
-                        switch (rootElement.config.layout.sizing.width.type)
-                        {
-                            case Clay__SizingType.CLAY__SIZING_TYPE_GROW:
-                                rootElement.dimensions.width = parentLayoutElement.dimensions.width;
-                                break;
-                            case Clay__SizingType.CLAY__SIZING_TYPE_PERCENT:
-                                rootElement.dimensions.width = parentLayoutElement.dimensions.width * rootElement.config.layout.sizing.width.percent;
-                                break;
-                            default: break;
-                        }
-                        switch (rootElement.config.layout.sizing.height.type)
-                        {
-                            case Clay__SizingType.CLAY__SIZING_TYPE_GROW:
-                                rootElement.dimensions.height = parentLayoutElement.dimensions.height;
-                                break;
-                            case Clay__SizingType.CLAY__SIZING_TYPE_PERCENT:
-                                rootElement.dimensions.height = parentLayoutElement.dimensions.height * rootElement.config.layout.sizing.height.percent;
-                                break;
-                            default: break;
-                        }
+                        case SizingType.Grow:
+                            rootElement.Dimensions.Width = parentLayoutElement.Dimensions.Width;
+                            break;
+                        case SizingType.Percent:
+                            rootElement.Dimensions.Width = parentLayoutElement.Dimensions.Width * rootElement.Config.Layout.Sizing.Width.Percent;
+                            break;
+                        default: break;
+                    }
+                    switch (rootElement.Config.Layout.Sizing.Height.Type)
+                    {
+                        case SizingType.Grow:
+                            rootElement.Dimensions.Height = parentLayoutElement.Dimensions.Height;
+                            break;
+                        case SizingType.Percent:
+                            rootElement.Dimensions.Height = parentLayoutElement.Dimensions.Height * rootElement.Config.Layout.Sizing.Height.Percent;
+                            break;
+                        default: break;
                     }
                 }
+            }
 
-                if (rootElement.config.layout.sizing.width.type != Clay__SizingType.CLAY__SIZING_TYPE_PERCENT)
-                {
-                    rootElement.dimensions.width = MathF.Min(MathF.Max(rootElement.dimensions.width, rootElement.config.layout.sizing.width.minMax.min), rootElement.config.layout.sizing.width.minMax.max);
-                }
-                if (rootElement.config.layout.sizing.height.type != Clay__SizingType.CLAY__SIZING_TYPE_PERCENT)
-                {
-                    rootElement.dimensions.height = MathF.Min(MathF.Max(rootElement.dimensions.height, rootElement.config.layout.sizing.height.minMax.min), rootElement.config.layout.sizing.height.minMax.max);
-                }
+            if (rootElement.Config.Layout.Sizing.Width.Type != SizingType.Percent)
+            {
+                rootElement.Dimensions.Width = MathF.Min(MathF.Max(rootElement.Dimensions.Width, rootElement.Config.Layout.Sizing.Width.MinMax.Min), rootElement.Config.Layout.Sizing.Width.MinMax.Max);
+            }
+            if (rootElement.Config.Layout.Sizing.Height.Type != SizingType.Percent)
+            {
+                rootElement.Dimensions.Height = MathF.Min(MathF.Max(rootElement.Dimensions.Height, rootElement.Config.Layout.Sizing.Height.MinMax.Min), rootElement.Config.Layout.Sizing.Height.MinMax.Max);
+            }
 
-                for (int i = 0; i < bfsBuffer.length; ++i)
-                {
-                    int parentIndex = bfsBuffer.internalArray[i];
-                    Clay_LayoutElement parent = context.layoutElements.internalArray[parentIndex];
-                    ref Clay_LayoutConfig parentLayoutConfig = ref parent.config.layout;
-                    int growContainerCount = 0;
-                    float parentSize = xAxis ? parent.dimensions.width : parent.dimensions.height;
-                    float parentPadding = xAxis
-                        ? parentLayoutConfig.padding.left + parentLayoutConfig.padding.right
-                        : parentLayoutConfig.padding.top + parentLayoutConfig.padding.bottom;
-                    float innerContentSize = 0;
-                    float totalPaddingAndChildGaps = parentPadding;
-                    bool sizingAlongAxis = (xAxis && parentLayoutConfig.layoutDirection == Clay_LayoutDirection.CLAY_LEFT_TO_RIGHT)
-                                           || (!xAxis && parentLayoutConfig.layoutDirection == Clay_LayoutDirection.CLAY_TOP_TO_BOTTOM);
-                    resizableContainerBuffer.length = 0;
-                    float parentChildGap = parentLayoutConfig.childGap;
-                    bool isFirstChild = true;
+            for (int i = 0; i < bfsBuffer.Length; ++i)
+            {
+                int parentIndex = bfsBuffer.InternalArray[i];
+                LayoutElement parent = context.LayoutElements.InternalArray[parentIndex];
+                ref LayoutConfig parentLayoutConfig = ref parent.Config.Layout;
+                int growContainerCount = 0;
+                float parentSize = xAxis ? parent.Dimensions.Width : parent.Dimensions.Height;
+                float parentPadding = xAxis
+                    ? parentLayoutConfig.Padding.Left + parentLayoutConfig.Padding.Right
+                    : parentLayoutConfig.Padding.Top + parentLayoutConfig.Padding.Bottom;
+                float innerContentSize = 0;
+                float totalPaddingAndChildGaps = parentPadding;
+                bool sizingAlongAxis = (xAxis && parentLayoutConfig.LayoutDirection == LayoutDirection.LeftToRight)
+                                       || (!xAxis && parentLayoutConfig.LayoutDirection == LayoutDirection.TopToBottom);
+                resizableContainerBuffer.Length = 0;
+                float parentChildGap = parentLayoutConfig.ChildGap;
+                bool isFirstChild = true;
 
-                    for (int childOffset = 0; childOffset < parent.children.length; childOffset++)
+                for (int childOffset = 0; childOffset < parent.Children.Length; childOffset++)
+                {
+                    LayoutElement childElement = parent.Children.Elements[parent.Children.Offset + childOffset];
+                    int childElementIndex = childElement.Index;
+                    SizingAxis childSizing = __GetElementSizing(childElement, xAxis);
+                    float childSize = xAxis ? childElement.Dimensions.Width : childElement.Dimensions.Height;
+
+                    if (collectElements && childElement.IsTextElement)
                     {
-                        Clay_LayoutElement childElement = parent.children.elements[parent.children.offset + childOffset];
-                        int childElementIndex = childElement.index;
-                        Clay_SizingAxis childSizing = __GetElementSizing(childElement, xAxis);
-                        float childSize = xAxis ? childElement.dimensions.width : childElement.dimensions.height;
-
-                        if (collectElements && childElement.isTextElement)
-                        {
-                            textElementsOut.Add(childElementIndex);
-                        }
-                        else if (childElement.children.length > 0)
-                        {
-                            bfsBuffer.Add(childElementIndex);
-                        }
-
-                        if (!childElement.isTextElement && collectElements && childElement.config.aspectRatio.aspectRatio != 0)
-                        {
-                            aspectRatioElementsOut.Add(childElementIndex);
-                        }
-
-                        // Note: setting isFirstChild = false is skipped here.
-                        if (childElement.exiting)
-                        {
-                            continue;
-                        }
-
-                        if (childSizing.type != Clay__SizingType.CLAY__SIZING_TYPE_PERCENT
-                            && childSizing.type != Clay__SizingType.CLAY__SIZING_TYPE_FIXED
-                            && (!childElement.isTextElement || childElement.textConfig.wrapMode == Clay_TextElementConfigWrapMode.CLAY_TEXT_WRAP_WORDS))
-                        {
-                            resizableContainerBuffer.Add(childElementIndex);
-                        }
-
-                        if (sizingAlongAxis)
-                        {
-                            innerContentSize += (childSizing.type == Clay__SizingType.CLAY__SIZING_TYPE_PERCENT ? 0 : childSize);
-                            if (childSizing.type == Clay__SizingType.CLAY__SIZING_TYPE_GROW)
-                            {
-                                growContainerCount++;
-                            }
-                            if (!isFirstChild)
-                            {
-                                // For children after index 0, the childAxisOffset is the gap from the previous child.
-                                innerContentSize += parentChildGap;
-                                totalPaddingAndChildGaps += parentChildGap;
-                            }
-                        }
-                        else
-                        {
-                            innerContentSize = MathF.Max(childSize, innerContentSize);
-                        }
-                        isFirstChild = false;
+                        textElementsOut.Add(childElementIndex);
+                    }
+                    else if (childElement.Children.Length > 0)
+                    {
+                        bfsBuffer.Add(childElementIndex);
                     }
 
-                    // Expand percentage containers to size.
-                    for (int childOffset = 0; childOffset < parent.children.length; childOffset++)
+                    if (!childElement.IsTextElement && collectElements && childElement.Config.AspectRatio.AspectRatio != 0)
                     {
-                        Clay_LayoutElement childElement = parent.children.elements[parent.children.offset + childOffset];
-                        Clay_SizingAxis childSizing = __GetElementSizing(childElement, xAxis);
-                        if (childSizing.type == Clay__SizingType.CLAY__SIZING_TYPE_PERCENT)
-                        {
-                            float percentSize = (parentSize - totalPaddingAndChildGaps) * childSizing.percent;
-                            if (xAxis) childElement.dimensions.width = percentSize;
-                            else childElement.dimensions.height = percentSize;
-                            if (sizingAlongAxis)
-                            {
-                                innerContentSize += percentSize;
-                            }
-                            __UpdateAspectRatioBox(childElement);
-                        }
+                        aspectRatioElementsOut.Add(childElementIndex);
+                    }
+
+                    // Note: setting isFirstChild = false is skipped here.
+                    if (childElement.Exiting)
+                    {
+                        continue;
+                    }
+
+                    if (childSizing.Type != SizingType.Percent
+                        && childSizing.Type != SizingType.Fixed
+                        && (!childElement.IsTextElement || childElement.TextConfig.WrapMode == TextElementConfigWrapMode.Words))
+                    {
+                        resizableContainerBuffer.Add(childElementIndex);
                     }
 
                     if (sizingAlongAxis)
                     {
-                        float sizeToDistribute = parentSize - parentPadding - innerContentSize;
-                        // The content is too large, compress the children as much as possible.
-                        if (sizeToDistribute < 0)
+                        innerContentSize += (childSizing.Type == SizingType.Percent ? 0 : childSize);
+                        if (childSizing.Type == SizingType.Grow)
                         {
-                            // If the parent clips content in this axis direction, don't compress children.
-                            if ((xAxis && parent.config.clip.horizontal) || (!xAxis && parent.config.clip.vertical))
-                            {
-                                continue;
-                            }
-                            // Scrolling containers preferentially compress before others.
-                            while (sizeToDistribute < -CLAY__EPSILON && resizableContainerBuffer.length > 0)
-                            {
-                                float largest = 0;
-                                float secondLargest = 0;
-                                float widthToAdd = sizeToDistribute;
-                                for (int childIndex = 0; childIndex < resizableContainerBuffer.length; childIndex++)
-                                {
-                                    Clay_LayoutElement child = context.layoutElements.internalArray[resizableContainerBuffer.internalArray[childIndex]];
-                                    float childSize = xAxis ? child.dimensions.width : child.dimensions.height;
-                                    if (__FloatEqual(childSize, largest)) continue;
-                                    if (childSize > largest)
-                                    {
-                                        secondLargest = largest;
-                                        largest = childSize;
-                                    }
-                                    if (childSize < largest)
-                                    {
-                                        secondLargest = MathF.Max(secondLargest, childSize);
-                                        widthToAdd = secondLargest - largest;
-                                    }
-                                }
-
-                                widthToAdd = MathF.Max(widthToAdd, sizeToDistribute / resizableContainerBuffer.length);
-
-                                for (int childIndex = 0; childIndex < resizableContainerBuffer.length; childIndex++)
-                                {
-                                    Clay_LayoutElement child = context.layoutElements.internalArray[resizableContainerBuffer.internalArray[childIndex]];
-                                    float minSize = xAxis ? child.minDimensions.width : child.minDimensions.height;
-                                    float previousWidth = xAxis ? child.dimensions.width : child.dimensions.height;
-                                    if (__FloatEqual(previousWidth, largest))
-                                    {
-                                        float newSize = previousWidth + widthToAdd;
-                                        if (newSize <= minSize)
-                                        {
-                                            newSize = minSize;
-                                            resizableContainerBuffer.RemoveSwapback(childIndex--);
-                                        }
-                                        if (xAxis) child.dimensions.width = newSize;
-                                        else child.dimensions.height = newSize;
-                                        sizeToDistribute -= (newSize - previousWidth);
-                                    }
-                                }
-                            }
+                            growContainerCount++;
                         }
-                        // The content is too small, allow SIZING_GROW containers to expand.
-                        else if (sizeToDistribute > 0 && growContainerCount > 0)
+                        if (!isFirstChild)
                         {
-                            for (int childIndex = 0; childIndex < resizableContainerBuffer.length; childIndex++)
-                            {
-                                Clay_LayoutElement child = context.layoutElements.internalArray[resizableContainerBuffer.internalArray[childIndex]];
-                                if (__GetElementSizing(child, xAxis).type != Clay__SizingType.CLAY__SIZING_TYPE_GROW)
-                                {
-                                    resizableContainerBuffer.RemoveSwapback(childIndex--);
-                                }
-                            }
-                            while (sizeToDistribute > CLAY__EPSILON && resizableContainerBuffer.length > 0)
-                            {
-                                float smallest = CLAY__MAXFLOAT;
-                                float secondSmallest = CLAY__MAXFLOAT;
-                                float widthToAdd = sizeToDistribute;
-                                for (int childIndex = 0; childIndex < resizableContainerBuffer.length; childIndex++)
-                                {
-                                    Clay_LayoutElement child = context.layoutElements.internalArray[resizableContainerBuffer.internalArray[childIndex]];
-                                    float childSize = xAxis ? child.dimensions.width : child.dimensions.height;
-                                    if (__FloatEqual(childSize, smallest)) continue;
-                                    if (childSize < smallest)
-                                    {
-                                        secondSmallest = smallest;
-                                        smallest = childSize;
-                                    }
-                                    if (childSize > smallest)
-                                    {
-                                        secondSmallest = MathF.Min(secondSmallest, childSize);
-                                        widthToAdd = secondSmallest - smallest;
-                                    }
-                                }
-
-                                widthToAdd = MathF.Min(widthToAdd, sizeToDistribute / resizableContainerBuffer.length);
-
-                                for (int childIndex = 0; childIndex < resizableContainerBuffer.length; childIndex++)
-                                {
-                                    Clay_LayoutElement child = context.layoutElements.internalArray[resizableContainerBuffer.internalArray[childIndex]];
-                                    Clay_SizingAxis childSizing = __GetElementSizing(child, xAxis);
-                                    float maxSize = childSizing.minMax.max;
-                                    float previousWidth = xAxis ? child.dimensions.width : child.dimensions.height;
-                                    if (__FloatEqual(previousWidth, smallest))
-                                    {
-                                        float newSize = previousWidth + widthToAdd;
-                                        if (newSize >= maxSize)
-                                        {
-                                            newSize = maxSize;
-                                            resizableContainerBuffer.RemoveSwapback(childIndex--);
-                                        }
-                                        if (xAxis) child.dimensions.width = newSize;
-                                        else child.dimensions.height = newSize;
-                                        sizeToDistribute -= (newSize - previousWidth);
-                                    }
-                                }
-                            }
+                            // For children after index 0, the childAxisOffset is the gap from the previous child.
+                            innerContentSize += parentChildGap;
+                            totalPaddingAndChildGaps += parentChildGap;
                         }
-                    }
-                    // Sizing along the non layout axis ("off axis").
-                    else
-                    {
-                        for (int childOffset = 0; childOffset < resizableContainerBuffer.length; childOffset++)
-                        {
-                            Clay_LayoutElement childElement = context.layoutElements.internalArray[resizableContainerBuffer.internalArray[childOffset]];
-                            Clay_SizingAxis childSizing = __GetElementSizing(childElement, xAxis);
-                            float minSize = xAxis ? childElement.minDimensions.width : childElement.minDimensions.height;
-                            float maxSize = parentSize - parentPadding;
-                            // If we're laying out the children of a scroll panel, grow containers expand to the size of the inner content.
-                            if ((xAxis && parent.config.clip.horizontal) || (!xAxis && parent.config.clip.vertical))
-                            {
-                                maxSize = MathF.Max(maxSize, innerContentSize);
-                            }
-                            if (childSizing.type == Clay__SizingType.CLAY__SIZING_TYPE_GROW)
-                            {
-                                float growSize = MathF.Min(maxSize, childSizing.minMax.max);
-                                if (xAxis) childElement.dimensions.width = growSize;
-                                else childElement.dimensions.height = growSize;
-                            }
-                            float clamped = MathF.Max(minSize, MathF.Min(xAxis ? childElement.dimensions.width : childElement.dimensions.height, maxSize));
-                            if (xAxis) childElement.dimensions.width = clamped;
-                            else childElement.dimensions.height = clamped;
-                        }
-                    }
-                }
-            }
-        }
-
-        internal static void __AddRenderCommand(Clay_RenderCommand renderCommand)
-        {
-            var context = GetCurrentContext()!;
-            if (context.renderCommands.length < context.renderCommands.capacity - 1)
-            {
-                context.renderCommands.Add(renderCommand);
-            }
-            else
-            {
-                if (!context.booleanWarnings.maxRenderCommandsExceeded)
-                {
-                    context.booleanWarnings.maxRenderCommandsExceeded = true;
-                    context.Error(Clay_ErrorType.CLAY_ERROR_TYPE_ELEMENTS_CAPACITY_EXCEEDED,
-                        "Clay ran out of capacity while attempting to create render commands. This is usually caused by a large amount of wrapping text elements while close to the max element capacity. Try using Clay_SetMaxElementCount() with a higher value.");
-                }
-            }
-        }
-
-        internal static bool __ElementIsOffscreen(in Clay_BoundingBox boundingBox)
-        {
-            var context = GetCurrentContext()!;
-            if (context.disableCulling) return false;
-
-            return (boundingBox.x > context.layoutDimensions.width)
-                || (boundingBox.y > context.layoutDimensions.height)
-                || (boundingBox.x + boundingBox.width < 0)
-                || (boundingBox.y + boundingBox.height < 0);
-        }
-
-        internal static void __CalculateFinalLayout(float deltaTime, bool useStoredBoundingBoxes, bool generateRenderCommands)
-        {
-            var context = GetCurrentContext()!;
-
-            // Calculate sizing along the X axis.
-            ClayArray<int> textElements = context.openClipElementStack;
-            textElements.length = 0;
-            ClayArray<int> aspectRatioElements = context.reusableElementIndexBuffer;
-            aspectRatioElements.length = 0;
-            __SizeContainersAlongAxis(true, true, ref textElements, ref aspectRatioElements);
-
-            // Wrap text.
-            for (int textElementIndex = 0; textElementIndex < textElements.length; ++textElementIndex)
-            {
-                Clay_LayoutElement element = context.layoutElements.internalArray[textElements.internalArray[textElementIndex]];
-                ref Clay__TextElementData textElementData = ref element.textElementData;
-                textElementData.wrappedLines = new ClayArraySlice<Clay__WrappedTextLine>
-                {
-                    length = 0,
-                    internalArray = context.wrappedTextLines.internalArray,
-                    offset = context.wrappedTextLines.length,
-                };
-
-                Clay__MeasureTextCacheItem measureTextCacheItem = __MeasureTextCached(textElementData.text, element.textConfig);
-                float lineWidth = 0;
-                float lineHeight = element.textConfig.lineHeight > 0 ? element.textConfig.lineHeight : textElementData.preferredDimensions.height;
-                int lineLengthChars = 0;
-                int lineStartOffset = 0;
-
-                if (!measureTextCacheItem.containsNewlines && textElementData.preferredDimensions.width <= element.dimensions.width)
-                {
-                    context.wrappedTextLines.Add(new Clay__WrappedTextLine
-                    {
-                        dimensions = element.dimensions,
-                        line = new StringSegment(textElementData.text),
-                    });
-                    textElementData.wrappedLines.length++;
-                    continue;
-                }
-
-                float spaceWidth = s_measureText!(new StringSegment(" "), element.textConfig, context.measureTextUserData).width;
-                int wordIndex = measureTextCacheItem.measuredWordsStartIndex;
-                while (wordIndex != -1)
-                {
-                    if (context.wrappedTextLines.length > context.wrappedTextLines.capacity - 1) break;
-
-                    Clay__MeasuredWord measuredWord = context.measuredWords.internalArray[wordIndex];
-                    // Only word on the line is too large, just render it anyway.
-                    if (lineLengthChars == 0 && lineWidth + measuredWord.width > element.dimensions.width)
-                    {
-                        context.wrappedTextLines.Add(new Clay__WrappedTextLine
-                        {
-                            dimensions = new Clay_Dimensions { width = measuredWord.width, height = lineHeight },
-                            line = new StringSegment(textElementData.text, measuredWord.startOffset, measuredWord.length),
-                        });
-                        textElementData.wrappedLines.length++;
-                        wordIndex = measuredWord.next;
-                        lineStartOffset = measuredWord.startOffset + measuredWord.length;
-                    }
-                    // measuredWord.length == 0 means a newline character.
-                    else if (measuredWord.length == 0 || lineWidth + measuredWord.width > element.dimensions.width)
-                    {
-                        bool finalCharIsSpace = textElementData.text[Math.Max(lineStartOffset + lineLengthChars - 1, 0)] == ' ';
-                        // Clamp to 0 to avoid a negative-length StringSegment in a pathological case.
-                        int lineLength = Math.Max(lineLengthChars + (finalCharIsSpace ? -1 : 0), 0);
-                        context.wrappedTextLines.Add(new Clay__WrappedTextLine
-                        {
-                            dimensions = new Clay_Dimensions { width = lineWidth + (finalCharIsSpace ? -spaceWidth : 0), height = lineHeight },
-                            line = new StringSegment(textElementData.text, lineStartOffset, lineLength),
-                        });
-                        textElementData.wrappedLines.length++;
-                        if (lineLengthChars == 0 || measuredWord.length == 0)
-                        {
-                            wordIndex = measuredWord.next;
-                        }
-                        lineWidth = 0;
-                        lineLengthChars = 0;
-                        lineStartOffset = measuredWord.startOffset;
                     }
                     else
                     {
-                        lineWidth += measuredWord.width + element.textConfig.letterSpacing;
-                        lineLengthChars += measuredWord.length;
-                        wordIndex = measuredWord.next;
+                        innerContentSize = MathF.Max(childSize, innerContentSize);
                     }
+                    isFirstChild = false;
                 }
 
-                if (lineLengthChars > 0)
+                // Expand percentage containers to size.
+                for (int childOffset = 0; childOffset < parent.Children.Length; childOffset++)
                 {
-                    context.wrappedTextLines.Add(new Clay__WrappedTextLine
+                    LayoutElement childElement = parent.Children.Elements[parent.Children.Offset + childOffset];
+                    SizingAxis childSizing = __GetElementSizing(childElement, xAxis);
+                    if (childSizing.Type == SizingType.Percent)
                     {
-                        dimensions = new Clay_Dimensions { width = lineWidth - element.textConfig.letterSpacing, height = lineHeight },
-                        line = new StringSegment(textElementData.text, lineStartOffset, lineLengthChars),
-                    });
-                    textElementData.wrappedLines.length++;
-                }
-                element.dimensions.height = lineHeight * textElementData.wrappedLines.length;
-            }
-
-            // Scale vertical heights according to aspect ratio.
-            for (int i = 0; i < aspectRatioElements.length; ++i)
-            {
-                Clay_LayoutElement aspectElement = context.layoutElements.internalArray[aspectRatioElements.internalArray[i]];
-                aspectElement.dimensions.height = (1 / aspectElement.config.aspectRatio.aspectRatio) * aspectElement.dimensions.width;
-                aspectElement.config.layout.sizing.height.minMax.max = aspectElement.dimensions.height;
-            }
-
-            // Propagate the effect of text wrapping / aspect scaling on the height of parents.
-            ClayArray<Clay__LayoutElementTreeNode> dfsBuffer = context.layoutElementTreeNodeArray1;
-            dfsBuffer.length = 0;
-            for (int i = 0; i < context.layoutElementTreeRoots.length; ++i)
-            {
-                Clay__LayoutElementTreeRoot root = context.layoutElementTreeRoots.internalArray[i];
-                context.treeNodeVisited.internalArray[dfsBuffer.length] = false;
-                dfsBuffer.Add(new Clay__LayoutElementTreeNode { layoutElement = context.layoutElements.internalArray[root.layoutElementIndex] });
-            }
-            while (dfsBuffer.length > 0)
-            {
-                Clay__LayoutElementTreeNode currentElementTreeNode = dfsBuffer.internalArray[dfsBuffer.length - 1];
-                Clay_LayoutElement currentElement = currentElementTreeNode.layoutElement;
-                if (!context.treeNodeVisited.internalArray[dfsBuffer.length - 1])
-                {
-                    context.treeNodeVisited.internalArray[dfsBuffer.length - 1] = true;
-                    // If the element has no children or is a text element, don't bother inspecting it.
-                    if (currentElement.isTextElement || currentElement.children.length == 0)
-                    {
-                        dfsBuffer.length--;
-                        continue;
-                    }
-                    // Add the children to the DFS buffer.
-                    for (int i = 0; i < currentElement.children.length; i++)
-                    {
-                        context.treeNodeVisited.internalArray[dfsBuffer.length] = false;
-                        dfsBuffer.Add(new Clay__LayoutElementTreeNode
+                        float percentSize = (parentSize - totalPaddingAndChildGaps) * childSizing.Percent;
+                        if (xAxis) childElement.Dimensions.Width = percentSize;
+                        else childElement.Dimensions.Height = percentSize;
+                        if (sizingAlongAxis)
                         {
-                            layoutElement = currentElement.children.elements[currentElement.children.offset + i],
-                        });
-                    }
-                    continue;
-                }
-                dfsBuffer.length--;
-
-                // DFS node has been visited, this is on the way back up to the root.
-                ref Clay_LayoutConfig layoutConfig = ref currentElement.config.layout;
-                if (layoutConfig.layoutDirection == Clay_LayoutDirection.CLAY_LEFT_TO_RIGHT)
-                {
-                    // Resize any parent containers that have grown in height along their non layout axis.
-                    for (int j = 0; j < currentElement.children.length; ++j)
-                    {
-                        Clay_LayoutElement childElement = currentElement.children.elements[currentElement.children.offset + j];
-                        float childHeightWithPadding = MathF.Max(childElement.dimensions.height + layoutConfig.padding.top + layoutConfig.padding.bottom, currentElement.dimensions.height);
-                        currentElement.dimensions.height = MathF.Min(MathF.Max(childHeightWithPadding, layoutConfig.sizing.height.minMax.min), layoutConfig.sizing.height.minMax.max);
-                    }
-                }
-                else if (layoutConfig.layoutDirection == Clay_LayoutDirection.CLAY_TOP_TO_BOTTOM)
-                {
-                    // Resizing along the layout axis.
-                    float contentHeight = layoutConfig.padding.top + layoutConfig.padding.bottom;
-                    for (int j = 0; j < currentElement.children.length; ++j)
-                    {
-                        Clay_LayoutElement childElement = currentElement.children.elements[currentElement.children.offset + j];
-                        contentHeight += childElement.dimensions.height;
-                    }
-                    contentHeight += MathF.Max(currentElement.children.length - 1, 0) * layoutConfig.childGap;
-                    currentElement.dimensions.height = MathF.Min(MathF.Max(contentHeight, layoutConfig.sizing.height.minMax.min), layoutConfig.sizing.height.minMax.max);
-                }
-            }
-
-            // Calculate sizing along the Y axis.
-            ClayArray<int> noTextElements = default;
-            ClayArray<int> noAspectElements = default;
-            __SizeContainersAlongAxis(false, false, ref noTextElements, ref noAspectElements);
-
-            // Scale horizontal widths according to aspect ratio.
-            for (int i = 0; i < aspectRatioElements.length; ++i)
-            {
-                Clay_LayoutElement aspectElement = context.layoutElements.internalArray[aspectRatioElements.internalArray[i]];
-                aspectElement.dimensions.width = aspectElement.config.aspectRatio.aspectRatio * aspectElement.dimensions.height;
-            }
-
-            // Sort tree roots by z-index.
-            int sortMax = context.layoutElementTreeRoots.length - 1;
-            while (sortMax > 0) // todo dumb bubble sort.
-            {
-                for (int i = 0; i < sortMax; ++i)
-                {
-                    Clay__LayoutElementTreeRoot current = context.layoutElementTreeRoots.internalArray[i];
-                    Clay__LayoutElementTreeRoot next = context.layoutElementTreeRoots.internalArray[i + 1];
-                    if (next.zIndex < current.zIndex)
-                    {
-                        context.layoutElementTreeRoots.internalArray[i] = next;
-                        context.layoutElementTreeRoots.internalArray[i + 1] = current;
-                    }
-                }
-                sortMax--;
-            }
-
-            // Calculate final positions and generate render commands.
-            context.renderCommands.length = 0;
-            dfsBuffer.length = 0;
-
-            for (int rootIndex = 0; rootIndex < context.layoutElementTreeRoots.length; ++rootIndex)
-            {
-                dfsBuffer.length = 0;
-                Clay__LayoutElementTreeRoot root = context.layoutElementTreeRoots.internalArray[rootIndex];
-                Clay_LayoutElement rootElement = context.layoutElements.internalArray[root.layoutElementIndex];
-                Vector2 rootPosition = default;
-                ref Clay_LayoutElementHashMapItem parentHashMapItem = ref __GetHashMapItem(root.parentId);
-
-                // Position root floating containers.
-                if (rootElement.config.floating.attachTo != Clay_FloatingAttachToElement.CLAY_ATTACH_TO_NONE && !Unsafe.IsNullRef(in parentHashMapItem))
-                {
-                    ref Clay_FloatingElementConfig config = ref rootElement.config.floating;
-                    Clay_Dimensions rootDimensions = rootElement.dimensions;
-                    Clay_BoundingBox parentBoundingBox = parentHashMapItem.boundingBox;
-                    Vector2 targetAttachPosition = default;
-
-                    switch (config.attachPoints.parent)
-                    {
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_LEFT_TOP:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_LEFT_CENTER:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_LEFT_BOTTOM:
-                            targetAttachPosition.X = parentBoundingBox.x; break;
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_CENTER_TOP:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_CENTER_CENTER:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_CENTER_BOTTOM:
-                            targetAttachPosition.X = parentBoundingBox.x + parentBoundingBox.width / 2; break;
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_RIGHT_TOP:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_RIGHT_CENTER:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_RIGHT_BOTTOM:
-                            targetAttachPosition.X = parentBoundingBox.x + parentBoundingBox.width; break;
-                    }
-                    switch (config.attachPoints.element)
-                    {
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_LEFT_TOP:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_LEFT_CENTER:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_LEFT_BOTTOM: break;
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_CENTER_TOP:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_CENTER_CENTER:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_CENTER_BOTTOM:
-                            targetAttachPosition.X -= rootDimensions.width / 2; break;
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_RIGHT_TOP:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_RIGHT_CENTER:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_RIGHT_BOTTOM:
-                            targetAttachPosition.X -= rootDimensions.width; break;
-                    }
-                    switch (config.attachPoints.parent)
-                    {
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_LEFT_TOP:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_RIGHT_TOP:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_CENTER_TOP:
-                            targetAttachPosition.Y = parentBoundingBox.y; break;
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_LEFT_CENTER:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_CENTER_CENTER:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_RIGHT_CENTER:
-                            targetAttachPosition.Y = parentBoundingBox.y + parentBoundingBox.height / 2; break;
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_LEFT_BOTTOM:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_CENTER_BOTTOM:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_RIGHT_BOTTOM:
-                            targetAttachPosition.Y = parentBoundingBox.y + parentBoundingBox.height; break;
-                    }
-                    switch (config.attachPoints.element)
-                    {
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_LEFT_TOP:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_RIGHT_TOP:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_CENTER_TOP: break;
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_LEFT_CENTER:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_CENTER_CENTER:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_RIGHT_CENTER:
-                            targetAttachPosition.Y -= rootDimensions.height / 2; break;
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_LEFT_BOTTOM:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_CENTER_BOTTOM:
-                        case Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_RIGHT_BOTTOM:
-                            targetAttachPosition.Y -= rootDimensions.height; break;
-                    }
-                    targetAttachPosition.X += config.offset.X;
-                    targetAttachPosition.Y += config.offset.Y;
-                    rootPosition = targetAttachPosition;
-                }
-
-                if (root.clipElementId != 0)
-                {
-                    ref Clay_LayoutElementHashMapItem clipHashMapItem = ref __GetHashMapItem(root.clipElementId);
-                    if (!Unsafe.IsNullRef(in clipHashMapItem) && !__ElementIsOffscreen(in clipHashMapItem.boundingBox))
-                    {
-                        // Floating elements attached to scrolling contents won't be correctly positioned if external scroll handling is enabled; fix here.
-                        if (context.externalScrollHandlingEnabled)
-                        {
-                            if (clipHashMapItem.layoutElement.config.clip.horizontal)
-                            {
-                                rootPosition.X += clipHashMapItem.layoutElement.config.clip.childOffset.X;
-                            }
-                            if (clipHashMapItem.layoutElement.config.clip.vertical)
-                            {
-                                rootPosition.Y += clipHashMapItem.layoutElement.config.clip.childOffset.Y;
-                            }
+                            innerContentSize += percentSize;
                         }
-                        if (generateRenderCommands)
-                        {
-                            __AddRenderCommand(new Clay_RenderCommand
-                            {
-                                boundingBox = clipHashMapItem.boundingBox,
-                                userData = null,
-                                id = __HashNumber(rootElement.id, (uint)(rootElement.children.length + 10)).id, // TODO need a better strategy for managing derived ids.
-                                zIndex = root.zIndex,
-                                commandType = Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_SCISSOR_START,
-                            });
-                        }
+                        __UpdateAspectRatioBox(childElement);
                     }
                 }
 
-                dfsBuffer.Add(new Clay__LayoutElementTreeNode
+                if (sizingAlongAxis)
                 {
-                    layoutElement = rootElement,
-                    position = rootPosition,
-                    nextChildOffset = new Vector2(rootElement.config.layout.padding.left, rootElement.config.layout.padding.top),
-                });
-
-                context.treeNodeVisited.internalArray[0] = false;
-                while (dfsBuffer.length > 0)
-                {
-                    ref Clay__LayoutElementTreeNode currentElementTreeNode = ref dfsBuffer.internalArray[dfsBuffer.length - 1];
-                    Clay_LayoutElement currentElement = currentElementTreeNode.layoutElement;
-                    Clay_LayoutConfig layoutConfig = currentElement.isTextElement ? CLAY_LAYOUT_DEFAULT : currentElement.config.layout;
-                    Vector2 scrollOffset = default;
-
-                    // DFS is returning back upwards.
-                    if (context.treeNodeVisited.internalArray[dfsBuffer.length - 1])
+                    float sizeToDistribute = parentSize - parentPadding - innerContentSize;
+                    // The content is too large, compress the children as much as possible.
+                    if (sizeToDistribute < 0)
                     {
-                        if (currentElement.isTextElement)
+                        // If the parent clips content in this axis direction, don't compress children.
+                        if ((xAxis && parent.Config.Clip.Horizontal) || (!xAxis && parent.Config.Clip.Vertical))
                         {
-                            dfsBuffer.length--;
                             continue;
                         }
-                        ref Clay_LayoutElementHashMapItem currentElementData = ref __GetHashMapItem(currentElement.id);
-                        if (generateRenderCommands && !Unsafe.IsNullRef(in currentElementData) && !__ElementIsOffscreen(in currentElementData.boundingBox))
+                        // Scrolling containers preferentially compress before others.
+                        while (sizeToDistribute < -Epsilon && resizableContainerBuffer.Length > 0)
                         {
-                            bool closeClipElement = false;
-                            if (currentElement.config.clip.horizontal || currentElement.config.clip.vertical)
+                            float largest = 0;
+                            float secondLargest = 0;
+                            float widthToAdd = sizeToDistribute;
+                            for (int childIndex = 0; childIndex < resizableContainerBuffer.Length; childIndex++)
                             {
-                                closeClipElement = true;
-                                for (int i = 0; i < context.scrollContainerDatas.length; i++)
+                                LayoutElement child = context.LayoutElements.InternalArray[resizableContainerBuffer.InternalArray[childIndex]];
+                                float childSize = xAxis ? child.Dimensions.Width : child.Dimensions.Height;
+                                if (__FloatEqual(childSize, largest)) continue;
+                                if (childSize > largest)
                                 {
-                                    Clay__ScrollContainerDataInternal mapping = context.scrollContainerDatas.internalArray[i];
-                                    if (mapping.layoutElement == currentElement)
-                                    {
-                                        scrollOffset = currentElement.config.clip.childOffset;
-                                        if (context.externalScrollHandlingEnabled)
-                                        {
-                                            scrollOffset = default;
-                                        }
-                                        break;
-                                    }
+                                    secondLargest = largest;
+                                    largest = childSize;
+                                }
+                                if (childSize < largest)
+                                {
+                                    secondLargest = MathF.Max(secondLargest, childSize);
+                                    widthToAdd = secondLargest - largest;
                                 }
                             }
 
-                            if (__BorderHasAnyWidth(in currentElement.config.border))
-                            {
-                                Clay_BoundingBox borderBoundingBox = currentElementData.boundingBox;
-                                ref Clay_BorderElementConfig borderConfig = ref currentElement.config.border;
-                                __AddRenderCommand(new Clay_RenderCommand
-                                {
-                                    boundingBox = borderBoundingBox,
-                                    renderData = new Clay_RenderData
-                                    {
-                                        border = new Clay_BorderRenderData
-                                        {
-                                            color = borderConfig.color,
-                                            cornerRadius = currentElement.config.cornerRadius,
-                                            width = borderConfig.width,
-                                        },
-                                    },
-                                    userData = currentElement.config.userData,
-                                    id = __HashNumber(currentElement.id, currentElement.children.length).id,
-                                    commandType = Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_BORDER,
-                                });
+                            widthToAdd = MathF.Max(widthToAdd, sizeToDistribute / resizableContainerBuffer.Length);
 
-                                if (borderConfig.width.betweenChildren > 0 && borderConfig.color.a > 0)
+                            for (int childIndex = 0; childIndex < resizableContainerBuffer.Length; childIndex++)
+                            {
+                                LayoutElement child = context.LayoutElements.InternalArray[resizableContainerBuffer.InternalArray[childIndex]];
+                                float minSize = xAxis ? child.MinDimensions.Width : child.MinDimensions.Height;
+                                float previousWidth = xAxis ? child.Dimensions.Width : child.Dimensions.Height;
+                                if (__FloatEqual(previousWidth, largest))
                                 {
-                                    float halfGap = layoutConfig.childGap / 2;
-                                    float halfWidth = borderConfig.width.betweenChildren / 2;
-                                    Vector2 borderOffset = new Vector2(layoutConfig.padding.left - halfGap, layoutConfig.padding.top - halfGap);
-                                    if (layoutConfig.layoutDirection == Clay_LayoutDirection.CLAY_LEFT_TO_RIGHT)
+                                    float newSize = previousWidth + widthToAdd;
+                                    if (newSize <= minSize)
                                     {
-                                        for (int i = 0; i < currentElement.children.length; ++i)
-                                        {
-                                            Clay_LayoutElement childElement = currentElement.children.elements[currentElement.children.offset + i];
-                                            if (i > 0)
-                                            {
-                                                __AddRenderCommand(new Clay_RenderCommand
-                                                {
-                                                    boundingBox = new Clay_BoundingBox(
-                                                        borderBoundingBox.x + borderOffset.X + scrollOffset.X - halfWidth,
-                                                        borderBoundingBox.y + scrollOffset.Y,
-                                                        borderConfig.width.betweenChildren,
-                                                        currentElement.dimensions.height),
-                                                    renderData = new Clay_RenderData
-                                                    {
-                                                        rectangle = new Clay_RectangleRenderData { backgroundColor = borderConfig.color },
-                                                    },
-                                                    userData = currentElement.config.userData,
-                                                    id = __HashNumber(currentElement.id, (uint)(currentElement.children.length + 1 + i)).id,
-                                                    commandType = Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_RECTANGLE,
-                                                });
-                                            }
-                                            borderOffset.X += childElement.dimensions.width + layoutConfig.childGap;
-                                        }
+                                        newSize = minSize;
+                                        resizableContainerBuffer.RemoveSwapback(childIndex--);
                                     }
-                                    else
-                                    {
-                                        for (int i = 0; i < currentElement.children.length; ++i)
-                                        {
-                                            Clay_LayoutElement childElement = currentElement.children.elements[currentElement.children.offset + i];
-                                            if (i > 0)
-                                            {
-                                                __AddRenderCommand(new Clay_RenderCommand
-                                                {
-                                                    boundingBox = new Clay_BoundingBox(
-                                                        borderBoundingBox.x + scrollOffset.X,
-                                                        borderBoundingBox.y + borderOffset.Y + scrollOffset.Y - halfWidth,
-                                                        currentElement.dimensions.width,
-                                                        borderConfig.width.betweenChildren),
-                                                    renderData = new Clay_RenderData
-                                                    {
-                                                        rectangle = new Clay_RectangleRenderData { backgroundColor = borderConfig.color },
-                                                    },
-                                                    userData = currentElement.config.userData,
-                                                    id = __HashNumber(currentElement.id, (uint)(currentElement.children.length + 1 + i)).id,
-                                                    commandType = Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_RECTANGLE,
-                                                });
-                                            }
-                                            borderOffset.Y += childElement.dimensions.height + layoutConfig.childGap;
-                                        }
-                                    }
+                                    if (xAxis) child.Dimensions.Width = newSize;
+                                    else child.Dimensions.Height = newSize;
+                                    sizeToDistribute -= (newSize - previousWidth);
                                 }
-                            }
-
-                            if (currentElement.config.overlayColor.a > 0)
-                            {
-                                __AddRenderCommand(new Clay_RenderCommand
-                                {
-                                    userData = currentElement.config.userData,
-                                    id = currentElement.id,
-                                    zIndex = root.zIndex,
-                                    commandType = Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_OVERLAY_COLOR_END,
-                                });
-                            }
-                            // This exists because the scissor needs to end _after_ borders between elements.
-                            if (closeClipElement)
-                            {
-                                __AddRenderCommand(new Clay_RenderCommand
-                                {
-                                    id = __HashNumber(currentElement.id, (uint)(rootElement.children.length + 11)).id,
-                                    commandType = Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_SCISSOR_END,
-                                });
                             }
                         }
+                    }
+                    // The content is too small, allow SIZING_GROW containers to expand.
+                    else if (sizeToDistribute > 0 && growContainerCount > 0)
+                    {
+                        for (int childIndex = 0; childIndex < resizableContainerBuffer.Length; childIndex++)
+                        {
+                            LayoutElement child = context.LayoutElements.InternalArray[resizableContainerBuffer.InternalArray[childIndex]];
+                            if (__GetElementSizing(child, xAxis).Type != SizingType.Grow)
+                            {
+                                resizableContainerBuffer.RemoveSwapback(childIndex--);
+                            }
+                        }
+                        while (sizeToDistribute > Epsilon && resizableContainerBuffer.Length > 0)
+                        {
+                            float smallest = MaxFloat;
+                            float secondSmallest = MaxFloat;
+                            float widthToAdd = sizeToDistribute;
+                            for (int childIndex = 0; childIndex < resizableContainerBuffer.Length; childIndex++)
+                            {
+                                LayoutElement child = context.LayoutElements.InternalArray[resizableContainerBuffer.InternalArray[childIndex]];
+                                float childSize = xAxis ? child.Dimensions.Width : child.Dimensions.Height;
+                                if (__FloatEqual(childSize, smallest)) continue;
+                                if (childSize < smallest)
+                                {
+                                    secondSmallest = smallest;
+                                    smallest = childSize;
+                                }
+                                if (childSize > smallest)
+                                {
+                                    secondSmallest = MathF.Min(secondSmallest, childSize);
+                                    widthToAdd = secondSmallest - smallest;
+                                }
+                            }
 
-                        dfsBuffer.length--;
+                            widthToAdd = MathF.Min(widthToAdd, sizeToDistribute / resizableContainerBuffer.Length);
+
+                            for (int childIndex = 0; childIndex < resizableContainerBuffer.Length; childIndex++)
+                            {
+                                LayoutElement child = context.LayoutElements.InternalArray[resizableContainerBuffer.InternalArray[childIndex]];
+                                SizingAxis childSizing = __GetElementSizing(child, xAxis);
+                                float maxSize = childSizing.MinMax.Max;
+                                float previousWidth = xAxis ? child.Dimensions.Width : child.Dimensions.Height;
+                                if (__FloatEqual(previousWidth, smallest))
+                                {
+                                    float newSize = previousWidth + widthToAdd;
+                                    if (newSize >= maxSize)
+                                    {
+                                        newSize = maxSize;
+                                        resizableContainerBuffer.RemoveSwapback(childIndex--);
+                                    }
+                                    if (xAxis) child.Dimensions.Width = newSize;
+                                    else child.Dimensions.Height = newSize;
+                                    sizeToDistribute -= (newSize - previousWidth);
+                                }
+                            }
+                        }
+                    }
+                }
+                // Sizing along the non layout axis ("off axis").
+                else
+                {
+                    for (int childOffset = 0; childOffset < resizableContainerBuffer.Length; childOffset++)
+                    {
+                        LayoutElement childElement = context.LayoutElements.InternalArray[resizableContainerBuffer.InternalArray[childOffset]];
+                        SizingAxis childSizing = __GetElementSizing(childElement, xAxis);
+                        float minSize = xAxis ? childElement.MinDimensions.Width : childElement.MinDimensions.Height;
+                        float maxSize = parentSize - parentPadding;
+                        // If we're laying out the children of a scroll panel, grow containers expand to the size of the inner content.
+                        if ((xAxis && parent.Config.Clip.Horizontal) || (!xAxis && parent.Config.Clip.Vertical))
+                        {
+                            maxSize = MathF.Max(maxSize, innerContentSize);
+                        }
+                        if (childSizing.Type == SizingType.Grow)
+                        {
+                            float growSize = MathF.Min(maxSize, childSizing.MinMax.Max);
+                            if (xAxis) childElement.Dimensions.Width = growSize;
+                            else childElement.Dimensions.Height = growSize;
+                        }
+                        float clamped = MathF.Max(minSize, MathF.Min(xAxis ? childElement.Dimensions.Width : childElement.Dimensions.Height, maxSize));
+                        if (xAxis) childElement.Dimensions.Width = clamped;
+                        else childElement.Dimensions.Height = clamped;
+                    }
+                }
+            }
+        }
+    }
+
+    internal static void __AddRenderCommand(RenderCommand renderCommand)
+    {
+        var context = GetCurrentContext()!;
+        if (context.RenderCommands.Length < context.RenderCommands.Capacity - 1)
+        {
+            context.RenderCommands.Add(renderCommand);
+        }
+        else
+        {
+            if (!context.BooleanWarnings.MaxRenderCommandsExceeded)
+            {
+                context.BooleanWarnings.MaxRenderCommandsExceeded = true;
+                context.Error(ErrorType.ElementsCapacityExceeded,
+                    "Clay ran out of capacity while attempting to create render commands. This is usually caused by a large amount of wrapping text elements while close to the max element capacity. Try using SetMaxElementCount() with a higher value.");
+            }
+        }
+    }
+
+    internal static bool __ElementIsOffscreen(in BoundingBox boundingBox)
+    {
+        var context = GetCurrentContext()!;
+        if (context.DisableCulling) return false;
+
+        return (boundingBox.X > context.LayoutDimensions.Width)
+               || (boundingBox.Y > context.LayoutDimensions.Height)
+               || (boundingBox.X + boundingBox.Width < 0)
+               || (boundingBox.Y + boundingBox.Height < 0);
+    }
+
+    internal static void __CalculateFinalLayout(float deltaTime, bool useStoredBoundingBoxes, bool generateRenderCommands)
+    {
+        var context = GetCurrentContext()!;
+
+        // Calculate sizing along the X axis.
+        Array<int> textElements = context.OpenClipElementStack;
+        textElements.Length = 0;
+        Array<int> aspectRatioElements = context.ReusableElementIndexBuffer;
+        aspectRatioElements.Length = 0;
+        __SizeContainersAlongAxis(true, true, ref textElements, ref aspectRatioElements);
+
+        // Wrap text.
+        for (int textElementIndex = 0; textElementIndex < textElements.Length; ++textElementIndex)
+        {
+            LayoutElement element = context.LayoutElements.InternalArray[textElements.InternalArray[textElementIndex]];
+            ref TextElementData textElementData = ref element.TextElementData;
+            textElementData.WrappedLines = new ArraySlice<WrappedTextLine>
+            {
+                Length = 0,
+                InternalArray = context.WrappedTextLines.InternalArray,
+                Offset = context.WrappedTextLines.Length,
+            };
+
+            MeasureTextCacheItem measureTextCacheItem = __MeasureTextCached(textElementData.Text, element.TextConfig);
+            float lineWidth = 0;
+            float lineHeight = element.TextConfig.LineHeight > 0 ? element.TextConfig.LineHeight : textElementData.PreferredDimensions.Height;
+            int lineLengthChars = 0;
+            int lineStartOffset = 0;
+
+            if (!measureTextCacheItem.ContainsNewlines && textElementData.PreferredDimensions.Width <= element.Dimensions.Width)
+            {
+                context.WrappedTextLines.Add(new WrappedTextLine
+                {
+                    Dimensions = element.Dimensions,
+                    Line = new StringSegment(textElementData.Text),
+                });
+                textElementData.WrappedLines.Length++;
+                continue;
+            }
+
+            float spaceWidth = SMeasureText!(new StringSegment(" "), element.TextConfig, context.MeasureTextUserData).Width;
+            int wordIndex = measureTextCacheItem.MeasuredWordsStartIndex;
+            while (wordIndex != -1)
+            {
+                if (context.WrappedTextLines.Length > context.WrappedTextLines.Capacity - 1) break;
+
+                MeasuredWord measuredWord = context.MeasuredWords.InternalArray[wordIndex];
+                // Only word on the line is too large, just render it anyway.
+                if (lineLengthChars == 0 && lineWidth + measuredWord.Width > element.Dimensions.Width)
+                {
+                    context.WrappedTextLines.Add(new WrappedTextLine
+                    {
+                        Dimensions = new Dimensions { Width = measuredWord.Width, Height = lineHeight },
+                        Line = new StringSegment(textElementData.Text, measuredWord.StartOffset, measuredWord.Length),
+                    });
+                    textElementData.WrappedLines.Length++;
+                    wordIndex = measuredWord.Next;
+                    lineStartOffset = measuredWord.StartOffset + measuredWord.Length;
+                }
+                // measuredWord.length == 0 means a newline character.
+                else if (measuredWord.Length == 0 || lineWidth + measuredWord.Width > element.Dimensions.Width)
+                {
+                    bool finalCharIsSpace = textElementData.Text[Math.Max(lineStartOffset + lineLengthChars - 1, 0)] == ' ';
+                    // Clamp to 0 to avoid a negative-length StringSegment in a pathological case.
+                    int lineLength = Math.Max(lineLengthChars + (finalCharIsSpace ? -1 : 0), 0);
+                    context.WrappedTextLines.Add(new WrappedTextLine
+                    {
+                        Dimensions = new Dimensions { Width = lineWidth + (finalCharIsSpace ? -spaceWidth : 0), Height = lineHeight },
+                        Line = new StringSegment(textElementData.Text, lineStartOffset, lineLength),
+                    });
+                    textElementData.WrappedLines.Length++;
+                    if (lineLengthChars == 0 || measuredWord.Length == 0)
+                    {
+                        wordIndex = measuredWord.Next;
+                    }
+                    lineWidth = 0;
+                    lineLengthChars = 0;
+                    lineStartOffset = measuredWord.StartOffset;
+                }
+                else
+                {
+                    lineWidth += measuredWord.Width + element.TextConfig.LetterSpacing;
+                    lineLengthChars += measuredWord.Length;
+                    wordIndex = measuredWord.Next;
+                }
+            }
+
+            if (lineLengthChars > 0)
+            {
+                context.WrappedTextLines.Add(new WrappedTextLine
+                {
+                    Dimensions = new Dimensions { Width = lineWidth - element.TextConfig.LetterSpacing, Height = lineHeight },
+                    Line = new StringSegment(textElementData.Text, lineStartOffset, lineLengthChars),
+                });
+                textElementData.WrappedLines.Length++;
+            }
+            element.Dimensions.Height = lineHeight * textElementData.WrappedLines.Length;
+        }
+
+        // Scale vertical heights according to aspect ratio.
+        for (int i = 0; i < aspectRatioElements.Length; ++i)
+        {
+            LayoutElement aspectElement = context.LayoutElements.InternalArray[aspectRatioElements.InternalArray[i]];
+            aspectElement.Dimensions.Height = (1 / aspectElement.Config.AspectRatio.AspectRatio) * aspectElement.Dimensions.Width;
+            aspectElement.Config.Layout.Sizing.Height.MinMax.Max = aspectElement.Dimensions.Height;
+        }
+
+        // Propagate the effect of text wrapping / aspect scaling on the height of parents.
+        Array<LayoutElementTreeNode> dfsBuffer = context.LayoutElementTreeNodeArray1;
+        dfsBuffer.Length = 0;
+        for (int i = 0; i < context.LayoutElementTreeRoots.Length; ++i)
+        {
+            LayoutElementTreeRoot root = context.LayoutElementTreeRoots.InternalArray[i];
+            context.TreeNodeVisited.InternalArray[dfsBuffer.Length] = false;
+            dfsBuffer.Add(new LayoutElementTreeNode { LayoutElement = context.LayoutElements.InternalArray[root.LayoutElementIndex] });
+        }
+        while (dfsBuffer.Length > 0)
+        {
+            LayoutElementTreeNode currentElementTreeNode = dfsBuffer.InternalArray[dfsBuffer.Length - 1];
+            LayoutElement currentElement = currentElementTreeNode.LayoutElement;
+            if (!context.TreeNodeVisited.InternalArray[dfsBuffer.Length - 1])
+            {
+                context.TreeNodeVisited.InternalArray[dfsBuffer.Length - 1] = true;
+                // If the element has no children or is a text element, don't bother inspecting it.
+                if (currentElement.IsTextElement || currentElement.Children.Length == 0)
+                {
+                    dfsBuffer.Length--;
+                    continue;
+                }
+                // Add the children to the DFS buffer.
+                for (int i = 0; i < currentElement.Children.Length; i++)
+                {
+                    context.TreeNodeVisited.InternalArray[dfsBuffer.Length] = false;
+                    dfsBuffer.Add(new LayoutElementTreeNode
+                    {
+                        LayoutElement = currentElement.Children.Elements[currentElement.Children.Offset + i],
+                    });
+                }
+                continue;
+            }
+            dfsBuffer.Length--;
+
+            // DFS node has been visited, this is on the way back up to the root.
+            ref LayoutConfig layoutConfig = ref currentElement.Config.Layout;
+            if (layoutConfig.LayoutDirection == LayoutDirection.LeftToRight)
+            {
+                // Resize any parent containers that have grown in height along their non layout axis.
+                for (int j = 0; j < currentElement.Children.Length; ++j)
+                {
+                    LayoutElement childElement = currentElement.Children.Elements[currentElement.Children.Offset + j];
+                    float childHeightWithPadding = MathF.Max(childElement.Dimensions.Height + layoutConfig.Padding.Top + layoutConfig.Padding.Bottom, currentElement.Dimensions.Height);
+                    currentElement.Dimensions.Height = MathF.Min(MathF.Max(childHeightWithPadding, layoutConfig.Sizing.Height.MinMax.Min), layoutConfig.Sizing.Height.MinMax.Max);
+                }
+            }
+            else if (layoutConfig.LayoutDirection == LayoutDirection.TopToBottom)
+            {
+                // Resizing along the layout axis.
+                float contentHeight = layoutConfig.Padding.Top + layoutConfig.Padding.Bottom;
+                for (int j = 0; j < currentElement.Children.Length; ++j)
+                {
+                    LayoutElement childElement = currentElement.Children.Elements[currentElement.Children.Offset + j];
+                    contentHeight += childElement.Dimensions.Height;
+                }
+                contentHeight += MathF.Max(currentElement.Children.Length - 1, 0) * layoutConfig.ChildGap;
+                currentElement.Dimensions.Height = MathF.Min(MathF.Max(contentHeight, layoutConfig.Sizing.Height.MinMax.Min), layoutConfig.Sizing.Height.MinMax.Max);
+            }
+        }
+
+        // Calculate sizing along the Y axis.
+        Array<int> noTextElements = default;
+        Array<int> noAspectElements = default;
+        __SizeContainersAlongAxis(false, false, ref noTextElements, ref noAspectElements);
+
+        // Scale horizontal widths according to aspect ratio.
+        for (int i = 0; i < aspectRatioElements.Length; ++i)
+        {
+            LayoutElement aspectElement = context.LayoutElements.InternalArray[aspectRatioElements.InternalArray[i]];
+            aspectElement.Dimensions.Width = aspectElement.Config.AspectRatio.AspectRatio * aspectElement.Dimensions.Height;
+        }
+
+        // Sort tree roots by z-index.
+        int sortMax = context.LayoutElementTreeRoots.Length - 1;
+        while (sortMax > 0) // todo dumb bubble sort.
+        {
+            for (int i = 0; i < sortMax; ++i)
+            {
+                LayoutElementTreeRoot current = context.LayoutElementTreeRoots.InternalArray[i];
+                LayoutElementTreeRoot next = context.LayoutElementTreeRoots.InternalArray[i + 1];
+                if (next.ZIndex < current.ZIndex)
+                {
+                    context.LayoutElementTreeRoots.InternalArray[i] = next;
+                    context.LayoutElementTreeRoots.InternalArray[i + 1] = current;
+                }
+            }
+            sortMax--;
+        }
+
+        // Calculate final positions and generate render commands.
+        context.RenderCommands.Length = 0;
+        dfsBuffer.Length = 0;
+
+        for (int rootIndex = 0; rootIndex < context.LayoutElementTreeRoots.Length; ++rootIndex)
+        {
+            dfsBuffer.Length = 0;
+            LayoutElementTreeRoot root = context.LayoutElementTreeRoots.InternalArray[rootIndex];
+            LayoutElement rootElement = context.LayoutElements.InternalArray[root.LayoutElementIndex];
+            Vector2 rootPosition = default;
+            ref LayoutElementHashMapItem parentHashMapItem = ref __GetHashMapItem(root.ParentId);
+
+            // Position root floating containers.
+            if (rootElement.Config.Floating.AttachTo != FloatingAttachToElement.None && !Unsafe.IsNullRef(in parentHashMapItem))
+            {
+                ref FloatingElementConfig config = ref rootElement.Config.Floating;
+                Dimensions rootDimensions = rootElement.Dimensions;
+                BoundingBox parentBoundingBox = parentHashMapItem.BoundingBox;
+                Vector2 targetAttachPosition = default;
+
+                switch (config.AttachPoints.Parent)
+                {
+                    case FloatingAttachPointType.LeftTop:
+                    case FloatingAttachPointType.LeftCenter:
+                    case FloatingAttachPointType.LeftBottom:
+                        targetAttachPosition.X = parentBoundingBox.X; break;
+                    case FloatingAttachPointType.CenterTop:
+                    case FloatingAttachPointType.CenterCenter:
+                    case FloatingAttachPointType.CenterBottom:
+                        targetAttachPosition.X = parentBoundingBox.X + parentBoundingBox.Width / 2; break;
+                    case FloatingAttachPointType.RightTop:
+                    case FloatingAttachPointType.RightCenter:
+                    case FloatingAttachPointType.RightBottom:
+                        targetAttachPosition.X = parentBoundingBox.X + parentBoundingBox.Width; break;
+                }
+                switch (config.AttachPoints.Element)
+                {
+                    case FloatingAttachPointType.LeftTop:
+                    case FloatingAttachPointType.LeftCenter:
+                    case FloatingAttachPointType.LeftBottom: break;
+                    case FloatingAttachPointType.CenterTop:
+                    case FloatingAttachPointType.CenterCenter:
+                    case FloatingAttachPointType.CenterBottom:
+                        targetAttachPosition.X -= rootDimensions.Width / 2; break;
+                    case FloatingAttachPointType.RightTop:
+                    case FloatingAttachPointType.RightCenter:
+                    case FloatingAttachPointType.RightBottom:
+                        targetAttachPosition.X -= rootDimensions.Width; break;
+                }
+                switch (config.AttachPoints.Parent)
+                {
+                    case FloatingAttachPointType.LeftTop:
+                    case FloatingAttachPointType.RightTop:
+                    case FloatingAttachPointType.CenterTop:
+                        targetAttachPosition.Y = parentBoundingBox.Y; break;
+                    case FloatingAttachPointType.LeftCenter:
+                    case FloatingAttachPointType.CenterCenter:
+                    case FloatingAttachPointType.RightCenter:
+                        targetAttachPosition.Y = parentBoundingBox.Y + parentBoundingBox.Height / 2; break;
+                    case FloatingAttachPointType.LeftBottom:
+                    case FloatingAttachPointType.CenterBottom:
+                    case FloatingAttachPointType.RightBottom:
+                        targetAttachPosition.Y = parentBoundingBox.Y + parentBoundingBox.Height; break;
+                }
+                switch (config.AttachPoints.Element)
+                {
+                    case FloatingAttachPointType.LeftTop:
+                    case FloatingAttachPointType.RightTop:
+                    case FloatingAttachPointType.CenterTop: break;
+                    case FloatingAttachPointType.LeftCenter:
+                    case FloatingAttachPointType.CenterCenter:
+                    case FloatingAttachPointType.RightCenter:
+                        targetAttachPosition.Y -= rootDimensions.Height / 2; break;
+                    case FloatingAttachPointType.LeftBottom:
+                    case FloatingAttachPointType.CenterBottom:
+                    case FloatingAttachPointType.RightBottom:
+                        targetAttachPosition.Y -= rootDimensions.Height; break;
+                }
+                targetAttachPosition.X += config.Offset.X;
+                targetAttachPosition.Y += config.Offset.Y;
+                rootPosition = targetAttachPosition;
+            }
+
+            if (root.ClipElementId != 0)
+            {
+                ref LayoutElementHashMapItem clipHashMapItem = ref __GetHashMapItem(root.ClipElementId);
+                if (!Unsafe.IsNullRef(in clipHashMapItem) && !__ElementIsOffscreen(in clipHashMapItem.BoundingBox))
+                {
+                    // Floating elements attached to scrolling contents won't be correctly positioned if external scroll handling is enabled; fix here.
+                    if (context.ExternalScrollHandlingEnabled)
+                    {
+                        if (clipHashMapItem.LayoutElement.Config.Clip.Horizontal)
+                        {
+                            rootPosition.X += clipHashMapItem.LayoutElement.Config.Clip.ChildOffset.X;
+                        }
+                        if (clipHashMapItem.LayoutElement.Config.Clip.Vertical)
+                        {
+                            rootPosition.Y += clipHashMapItem.LayoutElement.Config.Clip.ChildOffset.Y;
+                        }
+                    }
+                    if (generateRenderCommands)
+                    {
+                        __AddRenderCommand(new RenderCommand
+                        {
+                            BoundingBox = clipHashMapItem.BoundingBox,
+                            UserData = null,
+                            Id = __HashNumber(rootElement.Id, (uint)(rootElement.Children.Length + 10)).Id, // TODO need a better strategy for managing derived ids.
+                            ZIndex = root.ZIndex,
+                            CommandType = RenderCommandType.ScissorStart,
+                        });
+                    }
+                }
+            }
+
+            dfsBuffer.Add(new LayoutElementTreeNode
+            {
+                LayoutElement = rootElement,
+                Position = rootPosition,
+                NextChildOffset = new Vector2(rootElement.Config.Layout.Padding.Left, rootElement.Config.Layout.Padding.Top),
+            });
+
+            context.TreeNodeVisited.InternalArray[0] = false;
+            while (dfsBuffer.Length > 0)
+            {
+                ref LayoutElementTreeNode currentElementTreeNode = ref dfsBuffer.InternalArray[dfsBuffer.Length - 1];
+                LayoutElement currentElement = currentElementTreeNode.LayoutElement;
+                LayoutConfig layoutConfig = currentElement.IsTextElement ? LayoutDefault : currentElement.Config.Layout;
+                Vector2 scrollOffset = default;
+
+                // DFS is returning back upwards.
+                if (context.TreeNodeVisited.InternalArray[dfsBuffer.Length - 1])
+                {
+                    if (currentElement.IsTextElement)
+                    {
+                        dfsBuffer.Length--;
                         continue;
                     }
-
-                    // This will only be run a single time for each element in downwards DFS order.
-                    context.treeNodeVisited.internalArray[dfsBuffer.length - 1] = true;
-                    Clay_BoundingBox currentElementBoundingBox = new Clay_BoundingBox(currentElementTreeNode.position.X, currentElementTreeNode.position.Y, currentElement.dimensions.width, currentElement.dimensions.height);
-                    ref Clay__ScrollContainerDataInternal scrollContainerData = ref Unsafe.NullRef<Clay__ScrollContainerDataInternal>();
-
-                    if (!currentElement.isTextElement)
+                    ref LayoutElementHashMapItem currentElementData = ref __GetHashMapItem(currentElement.Id);
+                    if (generateRenderCommands && !Unsafe.IsNullRef(in currentElementData) && !__ElementIsOffscreen(in currentElementData.BoundingBox))
                     {
-                        if (useStoredBoundingBoxes && currentElement.config.transition.handler != null)
+                        bool closeClipElement = false;
+                        if (currentElement.Config.Clip.Horizontal || currentElement.Config.Clip.Vertical)
                         {
-                            bool found = false;
-                            for (int j = 0; j < context.transitionDatas.length; ++j)
+                            closeClipElement = true;
+                            for (int i = 0; i < context.ScrollContainerDatas.Length; i++)
                             {
-                                ref Clay__TransitionDataInternal transitionData = ref context.transitionDatas.internalArray[j];
-                                if (transitionData.elementId == currentElement.id)
+                                ScrollContainerDataInternal mapping = context.ScrollContainerDatas.InternalArray[i];
+                                if (mapping.LayoutElement == currentElement)
                                 {
-                                    found = true;
-                                    if (transitionData.state != Clay_TransitionState.CLAY_TRANSITION_STATE_IDLE)
-                                    {
-                                        if ((transitionData.activeProperties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_X) != 0) currentElementBoundingBox.x = transitionData.currentState.boundingBox.x;
-                                        if ((transitionData.activeProperties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_Y) != 0) currentElementBoundingBox.y = transitionData.currentState.boundingBox.y;
-                                        if ((transitionData.activeProperties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_WIDTH) != 0) currentElementBoundingBox.width = transitionData.currentState.boundingBox.width;
-                                        if ((transitionData.activeProperties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_HEIGHT) != 0) currentElementBoundingBox.height = transitionData.currentState.boundingBox.height;
-                                    }
-                                    break;
-                                }
-                            }
-                            // An exiting element that completed its transition this frame - skip tree.
-                            if (!found && currentElement.config.transition.exit.setFinalState != null)
-                            {
-                                dfsBuffer.length--;
-                                continue;
-                            }
-                        }
-
-                        if (currentElement.config.floating.attachTo != Clay_FloatingAttachToElement.CLAY_ATTACH_TO_NONE)
-                        {
-                            ref Clay_FloatingElementConfig floatingElementConfig = ref currentElement.config.floating;
-                            Clay_Dimensions expand = floatingElementConfig.expand;
-                            currentElementBoundingBox.x -= expand.width;
-                            currentElementBoundingBox.width += expand.width * 2;
-                            currentElementBoundingBox.y -= expand.height;
-                            currentElementBoundingBox.height += expand.height * 2;
-                        }
-
-                        // Apply scroll offsets to container.
-                        if (currentElement.config.clip.horizontal || currentElement.config.clip.vertical)
-                        {
-                            // This linear scan could theoretically be slow under very strange conditions.
-                            for (int i = 0; i < context.scrollContainerDatas.length; i++)
-                            {
-                                ref Clay__ScrollContainerDataInternal mapping = ref context.scrollContainerDatas.internalArray[i];
-                                if (mapping.layoutElement == currentElement)
-                                {
-                                    scrollContainerData = ref mapping;
-                                    mapping.boundingBox = currentElementBoundingBox;
-                                    scrollOffset = currentElement.config.clip.childOffset;
-                                    if (context.externalScrollHandlingEnabled)
+                                    scrollOffset = currentElement.Config.Clip.ChildOffset;
+                                    if (context.ExternalScrollHandlingEnabled)
                                     {
                                         scrollOffset = default;
                                     }
@@ -2725,1441 +2545,1611 @@ namespace ClaySharp
                                 }
                             }
                         }
-                    }
 
-                    bool offscreen = __ElementIsOffscreen(in currentElementBoundingBox);
-
-                    // Generate render commands for current element.
-                    if (generateRenderCommands && !offscreen)
-                    {
-                        if (currentElement.isTextElement)
+                        if (__BorderHasAnyWidth(in currentElement.Config.Border))
                         {
-                            ref Clay_TextElementConfig textElementConfig = ref currentElement.textConfig;
-                            float naturalLineHeight = currentElement.textElementData.preferredDimensions.height;
-                            float finalLineHeight = textElementConfig.lineHeight > 0 ? textElementConfig.lineHeight : naturalLineHeight;
-                            float lineHeightOffset = (finalLineHeight - naturalLineHeight) / 2;
-                            float yPosition = lineHeightOffset;
-                            for (int lineIndex = 0; lineIndex < currentElement.textElementData.wrappedLines.length; ++lineIndex)
+                            BoundingBox borderBoundingBox = currentElementData.BoundingBox;
+                            ref BorderElementConfig borderConfig = ref currentElement.Config.Border;
+                            __AddRenderCommand(new RenderCommand
                             {
-                                Clay__WrappedTextLine wrappedLine = currentElement.textElementData.wrappedLines.internalArray[currentElement.textElementData.wrappedLines.offset + lineIndex];
-                                if (wrappedLine.line.Length == 0)
+                                BoundingBox = borderBoundingBox,
+                                RenderData = new RenderData
                                 {
-                                    yPosition += finalLineHeight;
-                                    continue;
-                                }
-                                float offset = currentElementBoundingBox.width - wrappedLine.dimensions.width;
-                                if (textElementConfig.textAlignment == Clay_TextAlignment.CLAY_TEXT_ALIGN_LEFT)
-                                {
-                                    offset = 0;
-                                }
-                                if (textElementConfig.textAlignment == Clay_TextAlignment.CLAY_TEXT_ALIGN_CENTER)
-                                {
-                                    offset /= 2;
-                                }
-                                __AddRenderCommand(new Clay_RenderCommand
-                                {
-                                    boundingBox = new Clay_BoundingBox(currentElementBoundingBox.x + offset, currentElementBoundingBox.y + yPosition, wrappedLine.dimensions.width, wrappedLine.dimensions.height),
-                                    renderData = new Clay_RenderData
+                                    Border = new BorderRenderData
                                     {
-                                        text = new Clay_TextRenderData
-                                        {
-                                            stringContents = wrappedLine.line,
-                                            textColor = textElementConfig.textColor,
-                                            fontId = textElementConfig.fontId,
-                                            fontSize = textElementConfig.fontSize,
-                                            letterSpacing = textElementConfig.letterSpacing,
-                                            lineHeight = textElementConfig.lineHeight,
-                                        },
+                                        Color = borderConfig.Color,
+                                        CornerRadius = currentElement.Config.CornerRadius,
+                                        Width = borderConfig.Width,
                                     },
-                                    userData = textElementConfig.userData,
-                                    id = __HashNumber((uint)lineIndex, currentElement.id).id,
-                                    zIndex = root.zIndex,
-                                    commandType = Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_TEXT,
-                                });
-                                yPosition += finalLineHeight;
+                                },
+                                UserData = currentElement.Config.UserData,
+                                Id = __HashNumber(currentElement.Id, currentElement.Children.Length).Id,
+                                CommandType = RenderCommandType.Border,
+                            });
 
-                                if (!context.disableCulling && currentElementBoundingBox.y + yPosition > context.layoutDimensions.height)
-                                {
-                                    break;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            if (currentElement.config.overlayColor.a > 0)
+                            if (borderConfig.Width.BetweenChildren > 0 && borderConfig.Color.A > 0)
                             {
-                                __AddRenderCommand(new Clay_RenderCommand
+                                float halfGap = layoutConfig.ChildGap / 2;
+                                float halfWidth = borderConfig.Width.BetweenChildren / 2;
+                                Vector2 borderOffset = new Vector2(layoutConfig.Padding.Left - halfGap, layoutConfig.Padding.Top - halfGap);
+                                if (layoutConfig.LayoutDirection == LayoutDirection.LeftToRight)
                                 {
-                                    renderData = new Clay_RenderData
+                                    for (int i = 0; i < currentElement.Children.Length; ++i)
                                     {
-                                        overlayColor = new Clay_OverlayColorRenderData { color = currentElement.config.overlayColor },
-                                    },
-                                    userData = currentElement.config.userData,
-                                    id = currentElement.id,
-                                    zIndex = root.zIndex,
-                                    commandType = Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_OVERLAY_COLOR_START,
-                                });
-                            }
-                            if (currentElement.config.image.imageData != null)
-                            {
-                                __AddRenderCommand(new Clay_RenderCommand
-                                {
-                                    boundingBox = currentElementBoundingBox,
-                                    renderData = new Clay_RenderData
-                                    {
-                                        image = new Clay_ImageRenderData
+                                        LayoutElement childElement = currentElement.Children.Elements[currentElement.Children.Offset + i];
+                                        if (i > 0)
                                         {
-                                            backgroundColor = currentElement.config.backgroundColor,
-                                            cornerRadius = currentElement.config.cornerRadius,
-                                            imageData = currentElement.config.image.imageData,
-                                        },
-                                    },
-                                    userData = currentElement.config.userData,
-                                    id = currentElement.id,
-                                    zIndex = root.zIndex,
-                                    commandType = Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_IMAGE,
-                                });
-                            }
-                            if (currentElement.config.custom.customData != null)
-                            {
-                                __AddRenderCommand(new Clay_RenderCommand
-                                {
-                                    boundingBox = currentElementBoundingBox,
-                                    renderData = new Clay_RenderData
-                                    {
-                                        custom = new Clay_CustomRenderData
-                                        {
-                                            backgroundColor = currentElement.config.backgroundColor,
-                                            cornerRadius = currentElement.config.cornerRadius,
-                                            customData = currentElement.config.custom.customData,
-                                        },
-                                    },
-                                    userData = currentElement.config.userData,
-                                    id = currentElement.id,
-                                    zIndex = root.zIndex,
-                                    commandType = Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_CUSTOM,
-                                });
-                            }
-                            if (currentElement.config.clip.horizontal || currentElement.config.clip.vertical)
-                            {
-                                __AddRenderCommand(new Clay_RenderCommand
-                                {
-                                    boundingBox = currentElementBoundingBox,
-                                    renderData = new Clay_RenderData
-                                    {
-                                        clip = new Clay_ClipRenderData
-                                        {
-                                            horizontal = currentElement.config.clip.horizontal,
-                                            vertical = currentElement.config.clip.vertical,
-                                        },
-                                    },
-                                    userData = currentElement.config.userData,
-                                    id = currentElement.id,
-                                    zIndex = root.zIndex,
-                                    commandType = Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_SCISSOR_START,
-                                });
-                            }
-                            if (currentElement.config.backgroundColor.a > 0)
-                            {
-                                __AddRenderCommand(new Clay_RenderCommand
-                                {
-                                    boundingBox = currentElementBoundingBox,
-                                    renderData = new Clay_RenderData
-                                    {
-                                        rectangle = new Clay_RectangleRenderData
-                                        {
-                                            backgroundColor = currentElement.config.backgroundColor,
-                                            cornerRadius = currentElement.config.cornerRadius,
-                                        },
-                                    },
-                                    userData = currentElement.config.userData,
-                                    id = currentElement.id,
-                                    zIndex = root.zIndex,
-                                    commandType = Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_RECTANGLE,
-                                });
-                            }
-                        }
-                    }
-
-                    ref Clay_LayoutElementHashMapItem hashMapItem = ref __GetHashMapItem(currentElement.id);
-                    if (!Unsafe.IsNullRef(in hashMapItem)) hashMapItem.boundingBox = currentElementBoundingBox;
-
-                    if (currentElement.isTextElement) continue;
-
-                    // Setup positions for child elements and add to DFS buffer.
-
-                    // On-axis alignment.
-                    Clay_Dimensions contentSizeCurrent = default;
-                    if (layoutConfig.layoutDirection == Clay_LayoutDirection.CLAY_LEFT_TO_RIGHT)
-                    {
-                        for (int i = 0; i < currentElement.children.length; ++i)
-                        {
-                            Clay_LayoutElement childElement = currentElement.children.elements[currentElement.children.offset + i];
-                            if (childElement.exiting) continue;
-                            contentSizeCurrent.width += childElement.dimensions.width;
-                            contentSizeCurrent.height = MathF.Max(contentSizeCurrent.height, childElement.dimensions.height);
-                        }
-                        contentSizeCurrent.width += MathF.Max(currentElement.children.length - 1, 0) * layoutConfig.childGap;
-                        float extraSpace = currentElement.dimensions.width - (layoutConfig.padding.left + layoutConfig.padding.right) - contentSizeCurrent.width;
-                        switch (layoutConfig.childAlignment.x)
-                        {
-                            case Clay_LayoutAlignmentX.CLAY_ALIGN_X_LEFT: extraSpace = 0; break;
-                            case Clay_LayoutAlignmentX.CLAY_ALIGN_X_CENTER: extraSpace /= 2; break;
-                            default: break;
-                        }
-                        extraSpace = MathF.Max(0, extraSpace);
-                        currentElementTreeNode.nextChildOffset.X += extraSpace;
-                    }
-                    else if (layoutConfig.layoutDirection == Clay_LayoutDirection.CLAY_TOP_TO_BOTTOM)
-                    {
-                        for (int i = 0; i < currentElement.children.length; ++i)
-                        {
-                            Clay_LayoutElement childElement = currentElement.children.elements[currentElement.children.offset + i];
-                            if (childElement.exiting) continue;
-                            contentSizeCurrent.width = MathF.Max(contentSizeCurrent.width, childElement.dimensions.width);
-                            contentSizeCurrent.height += childElement.dimensions.height;
-                        }
-                        contentSizeCurrent.height += MathF.Max(currentElement.children.length - 1, 0) * layoutConfig.childGap;
-                        float extraSpace = currentElement.dimensions.height - (layoutConfig.padding.top + layoutConfig.padding.bottom) - contentSizeCurrent.height;
-                        switch (layoutConfig.childAlignment.y)
-                        {
-                            case Clay_LayoutAlignmentY.CLAY_ALIGN_Y_TOP: extraSpace = 0; break;
-                            case Clay_LayoutAlignmentY.CLAY_ALIGN_Y_CENTER: extraSpace /= 2; break;
-                            default: break;
-                        }
-                        extraSpace = MathF.Max(0, extraSpace);
-                        currentElementTreeNode.nextChildOffset.Y += extraSpace;
-                    }
-
-                    if (!Unsafe.IsNullRef(in scrollContainerData))
-                    {
-                        scrollContainerData.contentSize = new Clay_Dimensions
-                        {
-                            width = contentSizeCurrent.width + layoutConfig.padding.left + layoutConfig.padding.right,
-                            height = contentSizeCurrent.height + layoutConfig.padding.top + layoutConfig.padding.bottom,
-                        };
-                    }
-
-                    // Add children to the DFS buffer.
-                    dfsBuffer.length += currentElement.children.length;
-                    for (int i = 0; i < currentElement.children.length; ++i)
-                    {
-                        Clay_LayoutElement childElement = currentElement.children.elements[currentElement.children.offset + i];
-
-                        // Alignment along non layout axis.
-                        if (layoutConfig.layoutDirection == Clay_LayoutDirection.CLAY_LEFT_TO_RIGHT)
-                        {
-                            currentElementTreeNode.nextChildOffset.Y = currentElement.config.layout.padding.top;
-                            float whiteSpaceAroundChild = currentElement.dimensions.height - (layoutConfig.padding.top + layoutConfig.padding.bottom) - childElement.dimensions.height;
-                            switch (layoutConfig.childAlignment.y)
-                            {
-                                case Clay_LayoutAlignmentY.CLAY_ALIGN_Y_TOP: break;
-                                case Clay_LayoutAlignmentY.CLAY_ALIGN_Y_CENTER: currentElementTreeNode.nextChildOffset.Y += whiteSpaceAroundChild / 2; break;
-                                case Clay_LayoutAlignmentY.CLAY_ALIGN_Y_BOTTOM: currentElementTreeNode.nextChildOffset.Y += whiteSpaceAroundChild; break;
-                            }
-                        }
-                        else
-                        {
-                            currentElementTreeNode.nextChildOffset.X = currentElement.config.layout.padding.left;
-                            float whiteSpaceAroundChild = currentElement.dimensions.width - (layoutConfig.padding.left + layoutConfig.padding.right) - childElement.dimensions.width;
-                            switch (layoutConfig.childAlignment.x)
-                            {
-                                case Clay_LayoutAlignmentX.CLAY_ALIGN_X_LEFT: break;
-                                case Clay_LayoutAlignmentX.CLAY_ALIGN_X_CENTER: currentElementTreeNode.nextChildOffset.X += whiteSpaceAroundChild / 2; break;
-                                case Clay_LayoutAlignmentX.CLAY_ALIGN_X_RIGHT: currentElementTreeNode.nextChildOffset.X += whiteSpaceAroundChild; break;
-                            }
-                        }
-
-                        Vector2 childPosition = new Vector2(
-                            currentElementBoundingBox.x + currentElementTreeNode.nextChildOffset.X + scrollOffset.X,
-                            currentElementBoundingBox.y + currentElementTreeNode.nextChildOffset.Y + scrollOffset.Y);
-
-                        // DFS buffer elements need to be added in reverse because stack traversal happens backwards.
-                        int newNodeIndex = dfsBuffer.length - 1 - i;
-                        dfsBuffer.internalArray[newNodeIndex] = new Clay__LayoutElementTreeNode
-                        {
-                            layoutElement = childElement,
-                            position = childPosition,
-                            nextChildOffset = new Vector2(childElement.config.layout.padding.left, childElement.config.layout.padding.top),
-                        };
-                        context.treeNodeVisited.internalArray[newNodeIndex] = false;
-
-                        // Update parent offsets.
-                        if (!childElement.exiting)
-                        {
-                            if (layoutConfig.layoutDirection == Clay_LayoutDirection.CLAY_LEFT_TO_RIGHT)
-                            {
-                                currentElementTreeNode.nextChildOffset.X += childElement.dimensions.width + layoutConfig.childGap;
-                            }
-                            else
-                            {
-                                currentElementTreeNode.nextChildOffset.Y += childElement.dimensions.height + layoutConfig.childGap;
-                            }
-                        }
-                    }
-                }
-
-                if (root.clipElementId != 0)
-                {
-                    ref Clay_LayoutElementHashMapItem clipHashMapItem = ref __GetHashMapItem(root.clipElementId);
-                    if (!Unsafe.IsNullRef(in clipHashMapItem) && !__ElementIsOffscreen(in clipHashMapItem.boundingBox))
-                    {
-                        __AddRenderCommand(new Clay_RenderCommand
-                        {
-                            id = __HashNumber(rootElement.id, (uint)(rootElement.children.length + 11)).id,
-                            commandType = Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_SCISSOR_END,
-                        });
-                    }
-                }
-            }
-        }
-
-        // -------------------------------------
-        // PUBLIC API ---------------------------
-        // -------------------------------------
-
-        private static float Lerp(float from, float to, float mix) => from + (to - from) * mix;
-
-        public static Clay_Context Initialize(Clay_Dimensions layoutDimensions, Clay_ErrorHandler errorHandler)
-        {
-            int maxElementCount = s_currentContext != null ? s_currentContext.maxElementCount : s_defaultMaxElementCount;
-            int maxMeasureTextCacheWordCount = s_currentContext != null ? s_currentContext.maxMeasureTextCacheWordCount : s_defaultMaxMeasureTextWordCacheCount;
-
-            var context = new Clay_Context
-            {
-                maxElementCount = maxElementCount,
-                maxMeasureTextCacheWordCount = maxMeasureTextCacheWordCount,
-                errorHandler = errorHandler.errorHandlerFunction != null ? errorHandler : default,
-                layoutDimensions = layoutDimensions,
-            };
-            SetCurrentContext(context);
-            context.InitializePersistentMemory();
-            context.InitializeEphemeralMemory();
-
-            for (int i = 0; i < context.layoutElementsHashMap.capacity; ++i)
-            {
-                context.layoutElementsHashMap.internalArray[i] = -1;
-            }
-            for (int i = 0; i < context.measureTextHashMap.capacity; ++i)
-            {
-                context.measureTextHashMap.internalArray[i] = 0;
-            }
-            context.measureTextHashMapInternal.length = 1; // Reserve the 0 value to mean "no next element".
-            context.layoutDimensions = layoutDimensions;
-            return context;
-        }
-
-        public static void SetMeasureTextFunction(Clay_MeasureTextFunction measureTextFunction, object? userData)
-        {
-            var context = GetCurrentContext()!;
-            s_measureText = measureTextFunction;
-            context.measureTextUserData = userData;
-        }
-
-        public static void SetQueryScrollOffsetFunction(Clay_QueryScrollOffsetFunction queryScrollOffsetFunction, object? userData)
-        {
-            var context = GetCurrentContext()!;
-            s_queryScrollOffset = queryScrollOffsetFunction;
-            context.queryScrollOffsetUserData = userData;
-        }
-
-        public static void SetLayoutDimensions(Clay_Dimensions dimensions)
-        {
-            var context = GetCurrentContext()!;
-            context.rootResizedLastFrame = !__FloatEqual(context.layoutDimensions.width, dimensions.width) || !__FloatEqual(context.layoutDimensions.height, dimensions.height);
-            context.layoutDimensions = dimensions;
-        }
-
-        public static Clay_Dimensions GetLayoutDimensions() => GetCurrentContext()!.layoutDimensions;
-
-        public static void SetPointerState(Vector2 position, bool isPointerDown)
-        {
-            var context = GetCurrentContext()!;
-            if (context.booleanWarnings.maxElementsExceeded) return;
-
-            context.pointerInfo.position = position;
-            context.pointerOverIds.length = 0;
-
-            ClayArray<int> dfsBuffer = context.layoutElementChildrenBuffer;
-
-            for (int rootIndex = context.layoutElementTreeRoots.length - 1; rootIndex >= 0; --rootIndex)
-            {
-                dfsBuffer.length = 0;
-                Clay__LayoutElementTreeRoot root = context.layoutElementTreeRoots.internalArray[rootIndex];
-                dfsBuffer.Add(root.layoutElementIndex);
-                context.treeNodeVisited.internalArray[0] = false;
-                bool found = false;
-                bool skipTree = false;
-
-                while (dfsBuffer.length > 0)
-                {
-                    if (context.treeNodeVisited.internalArray[dfsBuffer.length - 1])
-                    {
-                        dfsBuffer.length--;
-                        continue;
-                    }
-                    context.treeNodeVisited.internalArray[dfsBuffer.length - 1] = true;
-
-                    int currentElementIndex = dfsBuffer.internalArray[dfsBuffer.length - 1];
-                    Clay_LayoutElement currentElement = context.layoutElements.internalArray[currentElementIndex];
-
-                    ref Clay_LayoutElementHashMapItem mapItem = ref __GetHashMapItem(currentElement.id); // TODO think of a way around this.
-                    int clipElementId = context.layoutElementClipElementIds.GetValue(currentElementIndex);
-                    ref Clay_LayoutElementHashMapItem clipItem = ref __GetHashMapItem((uint)clipElementId);
-
-                    // This check skips mouse interactions for elements that are currently "exit transitioning".
-                    if (!Unsafe.IsNullRef(in mapItem) && mapItem.generation > context.generation)
-                    {
-                        // Conditionally skip mouse interactions on non-exit transitions, based on user config.
-                        if (!currentElement.isTextElement && currentElement.config.transition.handler != null)
-                        {
-                            for (int I = 0; I < context.transitionDatas.length; ++I)
-                            {
-                                ref Clay__TransitionDataInternal data = ref context.transitionDatas.internalArray[I];
-                                if (data.elementId == currentElement.id)
-                                {
-                                    if (currentElement.config.transition.interactionHandling == Clay_TransitionInteractionHandlingType.CLAY_TRANSITION_DISABLE_INTERACTIONS_WHILE_TRANSITIONING_POSITION)
-                                    {
-                                        if (data.state == Clay_TransitionState.CLAY_TRANSITION_STATE_EXITING || data.state == Clay_TransitionState.CLAY_TRANSITION_STATE_ENTERING
-                                            || ((data.activeProperties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_POSITION) != 0 && data.state == Clay_TransitionState.CLAY_TRANSITION_STATE_TRANSITIONING))
-                                        {
-                                            skipTree = true;
+                                            __AddRenderCommand(new RenderCommand
+                                            {
+                                                BoundingBox = new BoundingBox(
+                                                    borderBoundingBox.X + borderOffset.X + scrollOffset.X - halfWidth,
+                                                    borderBoundingBox.Y + scrollOffset.Y,
+                                                    borderConfig.Width.BetweenChildren,
+                                                    currentElement.Dimensions.Height),
+                                                RenderData = new RenderData
+                                                {
+                                                    Rectangle = new RectangleRenderData { BackgroundColor = borderConfig.Color },
+                                                },
+                                                UserData = currentElement.Config.UserData,
+                                                Id = __HashNumber(currentElement.Id, (uint)(currentElement.Children.Length + 1 + i)).Id,
+                                                CommandType = RenderCommandType.Rectangle,
+                                            });
                                         }
+                                        borderOffset.X += childElement.Dimensions.Width + layoutConfig.ChildGap;
                                     }
-                                    else if (currentElement.config.transition.interactionHandling == Clay_TransitionInteractionHandlingType.CLAY_TRANSITION_ALLOW_INTERACTIONS_WHILE_TRANSITIONING_POSITION)
+                                }
+                                else
+                                {
+                                    for (int i = 0; i < currentElement.Children.Length; ++i)
                                     {
-                                        if (data.state == Clay_TransitionState.CLAY_TRANSITION_STATE_EXITING)
+                                        LayoutElement childElement = currentElement.Children.Elements[currentElement.Children.Offset + i];
+                                        if (i > 0)
                                         {
-                                            skipTree = true;
+                                            __AddRenderCommand(new RenderCommand
+                                            {
+                                                BoundingBox = new BoundingBox(
+                                                    borderBoundingBox.X + scrollOffset.X,
+                                                    borderBoundingBox.Y + borderOffset.Y + scrollOffset.Y - halfWidth,
+                                                    currentElement.Dimensions.Width,
+                                                    borderConfig.Width.BetweenChildren),
+                                                RenderData = new RenderData
+                                                {
+                                                    Rectangle = new RectangleRenderData { BackgroundColor = borderConfig.Color },
+                                                },
+                                                UserData = currentElement.Config.UserData,
+                                                Id = __HashNumber(currentElement.Id, (uint)(currentElement.Children.Length + 1 + i)).Id,
+                                                CommandType = RenderCommandType.Rectangle,
+                                            });
                                         }
+                                        borderOffset.Y += childElement.Dimensions.Height + layoutConfig.ChildGap;
                                     }
                                 }
                             }
                         }
 
-                        if (skipTree)
+                        if (currentElement.Config.OverlayColor.A > 0)
                         {
-                            dfsBuffer.length--;
+                            __AddRenderCommand(new RenderCommand
+                            {
+                                UserData = currentElement.Config.UserData,
+                                Id = currentElement.Id,
+                                ZIndex = root.ZIndex,
+                                CommandType = RenderCommandType.OverlayColorEnd,
+                            });
+                        }
+                        // This exists because the scissor needs to end _after_ borders between elements.
+                        if (closeClipElement)
+                        {
+                            __AddRenderCommand(new RenderCommand
+                            {
+                                Id = __HashNumber(currentElement.Id, (uint)(rootElement.Children.Length + 11)).Id,
+                                CommandType = RenderCommandType.ScissorEnd,
+                            });
+                        }
+                    }
+
+                    dfsBuffer.Length--;
+                    continue;
+                }
+
+                // This will only be run a single time for each element in downwards DFS order.
+                context.TreeNodeVisited.InternalArray[dfsBuffer.Length - 1] = true;
+                BoundingBox currentElementBoundingBox = new BoundingBox(currentElementTreeNode.Position.X, currentElementTreeNode.Position.Y, currentElement.Dimensions.Width, currentElement.Dimensions.Height);
+                ref ScrollContainerDataInternal scrollContainerData = ref Unsafe.NullRef<ScrollContainerDataInternal>();
+
+                if (!currentElement.IsTextElement)
+                {
+                    if (useStoredBoundingBoxes && currentElement.Config.Transition.Handler != null)
+                    {
+                        bool found = false;
+                        for (int j = 0; j < context.TransitionDatas.Length; ++j)
+                        {
+                            ref TransitionDataInternal transitionData = ref context.TransitionDatas.InternalArray[j];
+                            if (transitionData.ElementId == currentElement.Id)
+                            {
+                                found = true;
+                                if (transitionData.State != TransitionState.Idle)
+                                {
+                                    if ((transitionData.ActiveProperties & TransitionProperty.X) != 0) currentElementBoundingBox.X = transitionData.CurrentState.BoundingBox.X;
+                                    if ((transitionData.ActiveProperties & TransitionProperty.Y) != 0) currentElementBoundingBox.Y = transitionData.CurrentState.BoundingBox.Y;
+                                    if ((transitionData.ActiveProperties & TransitionProperty.Width) != 0) currentElementBoundingBox.Width = transitionData.CurrentState.BoundingBox.Width;
+                                    if ((transitionData.ActiveProperties & TransitionProperty.Height) != 0) currentElementBoundingBox.Height = transitionData.CurrentState.BoundingBox.Height;
+                                }
+                                break;
+                            }
+                        }
+                        // An exiting element that completed its transition this frame - skip tree.
+                        if (!found && currentElement.Config.Transition.Exit.SetFinalState != null)
+                        {
+                            dfsBuffer.Length--;
                             continue;
                         }
+                    }
 
-                        Clay_BoundingBox elementBox = mapItem.boundingBox;
-                        elementBox.x -= root.pointerOffset.X;
-                        elementBox.y -= root.pointerOffset.Y;
-                        if (__PointIsInsideRect(position, elementBox)
-                            && (clipElementId == 0 || (!Unsafe.IsNullRef(in clipItem) && __PointIsInsideRect(position, clipItem.boundingBox)) || context.externalScrollHandlingEnabled))
+                    if (currentElement.Config.Floating.AttachTo != FloatingAttachToElement.None)
+                    {
+                        ref FloatingElementConfig floatingElementConfig = ref currentElement.Config.Floating;
+                        Dimensions expand = floatingElementConfig.Expand;
+                        currentElementBoundingBox.X -= expand.Width;
+                        currentElementBoundingBox.Width += expand.Width * 2;
+                        currentElementBoundingBox.Y -= expand.Height;
+                        currentElementBoundingBox.Height += expand.Height * 2;
+                    }
+
+                    // Apply scroll offsets to container.
+                    if (currentElement.Config.Clip.Horizontal || currentElement.Config.Clip.Vertical)
+                    {
+                        // This linear scan could theoretically be slow under very strange conditions.
+                        for (int i = 0; i < context.ScrollContainerDatas.Length; i++)
                         {
-                            mapItem.onHoverFunction?.Invoke(mapItem.elementId, context.pointerInfo, mapItem.hoverFunctionUserData);
-                            context.pointerOverIds.Add(mapItem.elementId);
-                            found = true;
+                            ref ScrollContainerDataInternal mapping = ref context.ScrollContainerDatas.InternalArray[i];
+                            if (mapping.LayoutElement == currentElement)
+                            {
+                                scrollContainerData = ref mapping;
+                                mapping.BoundingBox = currentElementBoundingBox;
+                                scrollOffset = currentElement.Config.Clip.ChildOffset;
+                                if (context.ExternalScrollHandlingEnabled)
+                                {
+                                    scrollOffset = default;
+                                }
+                                break;
+                            }
                         }
+                    }
+                }
 
-                        for (int i = currentElement.children.length - 1; i >= 0; --i)
+                bool offscreen = __ElementIsOffscreen(in currentElementBoundingBox);
+
+                // Generate render commands for current element.
+                if (generateRenderCommands && !offscreen)
+                {
+                    if (currentElement.IsTextElement)
+                    {
+                        ref TextElementConfig textElementConfig = ref currentElement.TextConfig;
+                        float naturalLineHeight = currentElement.TextElementData.PreferredDimensions.Height;
+                        float finalLineHeight = textElementConfig.LineHeight > 0 ? textElementConfig.LineHeight : naturalLineHeight;
+                        float lineHeightOffset = (finalLineHeight - naturalLineHeight) / 2;
+                        float yPosition = lineHeightOffset;
+                        for (int lineIndex = 0; lineIndex < currentElement.TextElementData.WrappedLines.Length; ++lineIndex)
                         {
-                            dfsBuffer.Add(currentElement.children.elements[currentElement.children.offset + i].index);
-                            context.treeNodeVisited.internalArray[dfsBuffer.length - 1] = false; // TODO needs to be ranged checked.
+                            WrappedTextLine wrappedLine = currentElement.TextElementData.WrappedLines.InternalArray[currentElement.TextElementData.WrappedLines.Offset + lineIndex];
+                            if (wrappedLine.Line.Length == 0)
+                            {
+                                yPosition += finalLineHeight;
+                                continue;
+                            }
+                            float offset = currentElementBoundingBox.Width - wrappedLine.Dimensions.Width;
+                            if (textElementConfig.TextAlignment == TextAlignment.Left)
+                            {
+                                offset = 0;
+                            }
+                            if (textElementConfig.TextAlignment == TextAlignment.Center)
+                            {
+                                offset /= 2;
+                            }
+                            __AddRenderCommand(new RenderCommand
+                            {
+                                BoundingBox = new BoundingBox(currentElementBoundingBox.X + offset, currentElementBoundingBox.Y + yPosition, wrappedLine.Dimensions.Width, wrappedLine.Dimensions.Height),
+                                RenderData = new RenderData
+                                {
+                                    Text = new TextRenderData
+                                    {
+                                        StringContents = wrappedLine.Line,
+                                        TextColor = textElementConfig.TextColor,
+                                        FontId = textElementConfig.FontId,
+                                        FontSize = textElementConfig.FontSize,
+                                        LetterSpacing = textElementConfig.LetterSpacing,
+                                        LineHeight = textElementConfig.LineHeight,
+                                    },
+                                },
+                                UserData = textElementConfig.UserData,
+                                Id = __HashNumber((uint)lineIndex, currentElement.Id).Id,
+                                ZIndex = root.ZIndex,
+                                CommandType = RenderCommandType.Text,
+                            });
+                            yPosition += finalLineHeight;
+
+                            if (!context.DisableCulling && currentElementBoundingBox.Y + yPosition > context.LayoutDimensions.Height)
+                            {
+                                break;
+                            }
                         }
                     }
                     else
                     {
-                        dfsBuffer.length--;
+                        if (currentElement.Config.OverlayColor.A > 0)
+                        {
+                            __AddRenderCommand(new RenderCommand
+                            {
+                                RenderData = new RenderData
+                                {
+                                    OverlayColor = new OverlayColorRenderData { Color = currentElement.Config.OverlayColor },
+                                },
+                                UserData = currentElement.Config.UserData,
+                                Id = currentElement.Id,
+                                ZIndex = root.ZIndex,
+                                CommandType = RenderCommandType.OverlayColorStart,
+                            });
+                        }
+                        if (currentElement.Config.Image.ImageData != null)
+                        {
+                            __AddRenderCommand(new RenderCommand
+                            {
+                                BoundingBox = currentElementBoundingBox,
+                                RenderData = new RenderData
+                                {
+                                    Image = new ImageRenderData
+                                    {
+                                        BackgroundColor = currentElement.Config.BackgroundColor,
+                                        CornerRadius = currentElement.Config.CornerRadius,
+                                        ImageData = currentElement.Config.Image.ImageData,
+                                    },
+                                },
+                                UserData = currentElement.Config.UserData,
+                                Id = currentElement.Id,
+                                ZIndex = root.ZIndex,
+                                CommandType = RenderCommandType.Image,
+                            });
+                        }
+                        if (currentElement.Config.Custom.CustomData != null)
+                        {
+                            __AddRenderCommand(new RenderCommand
+                            {
+                                BoundingBox = currentElementBoundingBox,
+                                RenderData = new RenderData
+                                {
+                                    Custom = new CustomRenderData
+                                    {
+                                        BackgroundColor = currentElement.Config.BackgroundColor,
+                                        CornerRadius = currentElement.Config.CornerRadius,
+                                        CustomData = currentElement.Config.Custom.CustomData,
+                                    },
+                                },
+                                UserData = currentElement.Config.UserData,
+                                Id = currentElement.Id,
+                                ZIndex = root.ZIndex,
+                                CommandType = RenderCommandType.Custom,
+                            });
+                        }
+                        if (currentElement.Config.Clip.Horizontal || currentElement.Config.Clip.Vertical)
+                        {
+                            __AddRenderCommand(new RenderCommand
+                            {
+                                BoundingBox = currentElementBoundingBox,
+                                RenderData = new RenderData
+                                {
+                                    Clip = new ClipRenderData
+                                    {
+                                        Horizontal = currentElement.Config.Clip.Horizontal,
+                                        Vertical = currentElement.Config.Clip.Vertical,
+                                    },
+                                },
+                                UserData = currentElement.Config.UserData,
+                                Id = currentElement.Id,
+                                ZIndex = root.ZIndex,
+                                CommandType = RenderCommandType.ScissorStart,
+                            });
+                        }
+                        if (currentElement.Config.BackgroundColor.A > 0)
+                        {
+                            __AddRenderCommand(new RenderCommand
+                            {
+                                BoundingBox = currentElementBoundingBox,
+                                RenderData = new RenderData
+                                {
+                                    Rectangle = new RectangleRenderData
+                                    {
+                                        BackgroundColor = currentElement.Config.BackgroundColor,
+                                        CornerRadius = currentElement.Config.CornerRadius,
+                                    },
+                                },
+                                UserData = currentElement.Config.UserData,
+                                Id = currentElement.Id,
+                                ZIndex = root.ZIndex,
+                                CommandType = RenderCommandType.Rectangle,
+                            });
+                        }
                     }
                 }
 
-                Clay_LayoutElement rootElement = context.layoutElements.internalArray[root.layoutElementIndex];
-                if (found && rootElement.config.floating.attachTo != Clay_FloatingAttachToElement.CLAY_ATTACH_TO_NONE
-                    && rootElement.config.floating.pointerCaptureMode == Clay_PointerCaptureMode.CLAY_POINTER_CAPTURE_MODE_CAPTURE)
+                ref LayoutElementHashMapItem hashMapItem = ref __GetHashMapItem(currentElement.Id);
+                if (!Unsafe.IsNullRef(in hashMapItem)) hashMapItem.BoundingBox = currentElementBoundingBox;
+
+                if (currentElement.IsTextElement) continue;
+
+                // Setup positions for child elements and add to DFS buffer.
+
+                // On-axis alignment.
+                Dimensions contentSizeCurrent = default;
+                if (layoutConfig.LayoutDirection == LayoutDirection.LeftToRight)
                 {
+                    for (int i = 0; i < currentElement.Children.Length; ++i)
+                    {
+                        LayoutElement childElement = currentElement.Children.Elements[currentElement.Children.Offset + i];
+                        if (childElement.Exiting) continue;
+                        contentSizeCurrent.Width += childElement.Dimensions.Width;
+                        contentSizeCurrent.Height = MathF.Max(contentSizeCurrent.Height, childElement.Dimensions.Height);
+                    }
+                    contentSizeCurrent.Width += MathF.Max(currentElement.Children.Length - 1, 0) * layoutConfig.ChildGap;
+                    float extraSpace = currentElement.Dimensions.Width - (layoutConfig.Padding.Left + layoutConfig.Padding.Right) - contentSizeCurrent.Width;
+                    switch (layoutConfig.ChildAlignment.X)
+                    {
+                        case LayoutAlignmentX.Left: extraSpace = 0; break;
+                        case LayoutAlignmentX.Center: extraSpace /= 2; break;
+                        default: break;
+                    }
+                    extraSpace = MathF.Max(0, extraSpace);
+                    currentElementTreeNode.NextChildOffset.X += extraSpace;
+                }
+                else if (layoutConfig.LayoutDirection == LayoutDirection.TopToBottom)
+                {
+                    for (int i = 0; i < currentElement.Children.Length; ++i)
+                    {
+                        LayoutElement childElement = currentElement.Children.Elements[currentElement.Children.Offset + i];
+                        if (childElement.Exiting) continue;
+                        contentSizeCurrent.Width = MathF.Max(contentSizeCurrent.Width, childElement.Dimensions.Width);
+                        contentSizeCurrent.Height += childElement.Dimensions.Height;
+                    }
+                    contentSizeCurrent.Height += MathF.Max(currentElement.Children.Length - 1, 0) * layoutConfig.ChildGap;
+                    float extraSpace = currentElement.Dimensions.Height - (layoutConfig.Padding.Top + layoutConfig.Padding.Bottom) - contentSizeCurrent.Height;
+                    switch (layoutConfig.ChildAlignment.Y)
+                    {
+                        case LayoutAlignmentY.Top: extraSpace = 0; break;
+                        case LayoutAlignmentY.Center: extraSpace /= 2; break;
+                        default: break;
+                    }
+                    extraSpace = MathF.Max(0, extraSpace);
+                    currentElementTreeNode.NextChildOffset.Y += extraSpace;
+                }
+
+                if (!Unsafe.IsNullRef(in scrollContainerData))
+                {
+                    scrollContainerData.ContentSize = new Dimensions
+                    {
+                        Width = contentSizeCurrent.Width + layoutConfig.Padding.Left + layoutConfig.Padding.Right,
+                        Height = contentSizeCurrent.Height + layoutConfig.Padding.Top + layoutConfig.Padding.Bottom,
+                    };
+                }
+
+                // Add children to the DFS buffer.
+                dfsBuffer.Length += currentElement.Children.Length;
+                for (int i = 0; i < currentElement.Children.Length; ++i)
+                {
+                    LayoutElement childElement = currentElement.Children.Elements[currentElement.Children.Offset + i];
+
+                    // Alignment along non layout axis.
+                    if (layoutConfig.LayoutDirection == LayoutDirection.LeftToRight)
+                    {
+                        currentElementTreeNode.NextChildOffset.Y = currentElement.Config.Layout.Padding.Top;
+                        float whiteSpaceAroundChild = currentElement.Dimensions.Height - (layoutConfig.Padding.Top + layoutConfig.Padding.Bottom) - childElement.Dimensions.Height;
+                        switch (layoutConfig.ChildAlignment.Y)
+                        {
+                            case LayoutAlignmentY.Top: break;
+                            case LayoutAlignmentY.Center: currentElementTreeNode.NextChildOffset.Y += whiteSpaceAroundChild / 2; break;
+                            case LayoutAlignmentY.Bottom: currentElementTreeNode.NextChildOffset.Y += whiteSpaceAroundChild; break;
+                        }
+                    }
+                    else
+                    {
+                        currentElementTreeNode.NextChildOffset.X = currentElement.Config.Layout.Padding.Left;
+                        float whiteSpaceAroundChild = currentElement.Dimensions.Width - (layoutConfig.Padding.Left + layoutConfig.Padding.Right) - childElement.Dimensions.Width;
+                        switch (layoutConfig.ChildAlignment.X)
+                        {
+                            case LayoutAlignmentX.Left: break;
+                            case LayoutAlignmentX.Center: currentElementTreeNode.NextChildOffset.X += whiteSpaceAroundChild / 2; break;
+                            case LayoutAlignmentX.Right: currentElementTreeNode.NextChildOffset.X += whiteSpaceAroundChild; break;
+                        }
+                    }
+
+                    Vector2 childPosition = new Vector2(
+                        currentElementBoundingBox.X + currentElementTreeNode.NextChildOffset.X + scrollOffset.X,
+                        currentElementBoundingBox.Y + currentElementTreeNode.NextChildOffset.Y + scrollOffset.Y);
+
+                    // DFS buffer elements need to be added in reverse because stack traversal happens backwards.
+                    int newNodeIndex = dfsBuffer.Length - 1 - i;
+                    dfsBuffer.InternalArray[newNodeIndex] = new LayoutElementTreeNode
+                    {
+                        LayoutElement = childElement,
+                        Position = childPosition,
+                        NextChildOffset = new Vector2(childElement.Config.Layout.Padding.Left, childElement.Config.Layout.Padding.Top),
+                    };
+                    context.TreeNodeVisited.InternalArray[newNodeIndex] = false;
+
+                    // Update parent offsets.
+                    if (!childElement.Exiting)
+                    {
+                        if (layoutConfig.LayoutDirection == LayoutDirection.LeftToRight)
+                        {
+                            currentElementTreeNode.NextChildOffset.X += childElement.Dimensions.Width + layoutConfig.ChildGap;
+                        }
+                        else
+                        {
+                            currentElementTreeNode.NextChildOffset.Y += childElement.Dimensions.Height + layoutConfig.ChildGap;
+                        }
+                    }
+                }
+            }
+
+            if (root.ClipElementId != 0)
+            {
+                ref LayoutElementHashMapItem clipHashMapItem = ref __GetHashMapItem(root.ClipElementId);
+                if (!Unsafe.IsNullRef(in clipHashMapItem) && !__ElementIsOffscreen(in clipHashMapItem.BoundingBox))
+                {
+                    __AddRenderCommand(new RenderCommand
+                    {
+                        Id = __HashNumber(rootElement.Id, (uint)(rootElement.Children.Length + 11)).Id,
+                        CommandType = RenderCommandType.ScissorEnd,
+                    });
+                }
+            }
+        }
+    }
+
+    // -------------------------------------
+    // PUBLIC API ---------------------------
+    // -------------------------------------
+
+    private static float Lerp(float from, float to, float mix) => from + (to - from) * mix;
+
+    public static Context Initialize(Dimensions layoutDimensions, ErrorHandler errorHandler)
+    {
+        int maxElementCount = SCurrentContext != null ? SCurrentContext.MaxElementCount : SDefaultMaxElementCount;
+        int maxMeasureTextCacheWordCount = SCurrentContext != null ? SCurrentContext.MaxMeasureTextCacheWordCount : SDefaultMaxMeasureTextWordCacheCount;
+
+        var context = new Context
+        {
+            MaxElementCount = maxElementCount,
+            MaxMeasureTextCacheWordCount = maxMeasureTextCacheWordCount,
+            ErrorHandler = errorHandler.ErrorHandlerFunction != null ? errorHandler : default,
+            LayoutDimensions = layoutDimensions,
+        };
+        SetCurrentContext(context);
+        context.InitializePersistentMemory();
+        context.InitializeEphemeralMemory();
+
+        for (int i = 0; i < context.LayoutElementsHashMap.Capacity; ++i)
+        {
+            context.LayoutElementsHashMap.InternalArray[i] = -1;
+        }
+        for (int i = 0; i < context.MeasureTextHashMap.Capacity; ++i)
+        {
+            context.MeasureTextHashMap.InternalArray[i] = 0;
+        }
+        context.MeasureTextHashMapInternal.Length = 1; // Reserve the 0 value to mean "no next element".
+        context.LayoutDimensions = layoutDimensions;
+        return context;
+    }
+
+    public static void SetMeasureTextFunction(MeasureTextFunction measureTextFunction, object? userData)
+    {
+        var context = GetCurrentContext()!;
+        SMeasureText = measureTextFunction;
+        context.MeasureTextUserData = userData;
+    }
+
+    public static void SetQueryScrollOffsetFunction(QueryScrollOffsetFunction queryScrollOffsetFunction, object? userData)
+    {
+        var context = GetCurrentContext()!;
+        SQueryScrollOffset = queryScrollOffsetFunction;
+        context.QueryScrollOffsetUserData = userData;
+    }
+
+    public static void SetLayoutDimensions(Dimensions dimensions)
+    {
+        var context = GetCurrentContext()!;
+        context.RootResizedLastFrame = !__FloatEqual(context.LayoutDimensions.Width, dimensions.Width) || !__FloatEqual(context.LayoutDimensions.Height, dimensions.Height);
+        context.LayoutDimensions = dimensions;
+    }
+
+    public static Dimensions GetLayoutDimensions() => GetCurrentContext()!.LayoutDimensions;
+
+    public static void SetPointerState(Vector2 position, bool isPointerDown)
+    {
+        var context = GetCurrentContext()!;
+        if (context.BooleanWarnings.MaxElementsExceeded) return;
+
+        context.PointerInfo.Position = position;
+        context.PointerOverIds.Length = 0;
+
+        Array<int> dfsBuffer = context.LayoutElementChildrenBuffer;
+
+        for (int rootIndex = context.LayoutElementTreeRoots.Length - 1; rootIndex >= 0; --rootIndex)
+        {
+            dfsBuffer.Length = 0;
+            LayoutElementTreeRoot root = context.LayoutElementTreeRoots.InternalArray[rootIndex];
+            dfsBuffer.Add(root.LayoutElementIndex);
+            context.TreeNodeVisited.InternalArray[0] = false;
+            bool found = false;
+            bool skipTree = false;
+
+            while (dfsBuffer.Length > 0)
+            {
+                if (context.TreeNodeVisited.InternalArray[dfsBuffer.Length - 1])
+                {
+                    dfsBuffer.Length--;
+                    continue;
+                }
+                context.TreeNodeVisited.InternalArray[dfsBuffer.Length - 1] = true;
+
+                int currentElementIndex = dfsBuffer.InternalArray[dfsBuffer.Length - 1];
+                LayoutElement currentElement = context.LayoutElements.InternalArray[currentElementIndex];
+
+                ref LayoutElementHashMapItem mapItem = ref __GetHashMapItem(currentElement.Id); // TODO think of a way around this.
+                int clipElementId = context.LayoutElementClipElementIds.GetValue(currentElementIndex);
+                ref LayoutElementHashMapItem clipItem = ref __GetHashMapItem((uint)clipElementId);
+
+                // This check skips mouse interactions for elements that are currently "exit transitioning".
+                if (!Unsafe.IsNullRef(in mapItem) && mapItem.Generation > context.Generation)
+                {
+                    // Conditionally skip mouse interactions on non-exit transitions, based on user config.
+                    if (!currentElement.IsTextElement && currentElement.Config.Transition.Handler != null)
+                    {
+                        for (int i = 0; i < context.TransitionDatas.Length; ++i)
+                        {
+                            ref TransitionDataInternal data = ref context.TransitionDatas.InternalArray[i];
+                            if (data.ElementId == currentElement.Id)
+                            {
+                                if (currentElement.Config.Transition.InteractionHandling == TransitionInteractionHandlingType.TransitionDisableInteractionsWhileTransitioningPosition)
+                                {
+                                    if (data.State == TransitionState.Exiting || data.State == TransitionState.Entering
+                                        || ((data.ActiveProperties & TransitionProperty.Position) != 0 && data.State == TransitionState.Transitioning))
+                                    {
+                                        skipTree = true;
+                                    }
+                                }
+                                else if (currentElement.Config.Transition.InteractionHandling == TransitionInteractionHandlingType.TransitionAllowInteractionsWhileTransitioningPosition)
+                                {
+                                    if (data.State == TransitionState.Exiting)
+                                    {
+                                        skipTree = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (skipTree)
+                    {
+                        dfsBuffer.Length--;
+                        continue;
+                    }
+
+                    BoundingBox elementBox = mapItem.BoundingBox;
+                    elementBox.X -= root.PointerOffset.X;
+                    elementBox.Y -= root.PointerOffset.Y;
+                    if (__PointIsInsideRect(position, elementBox)
+                        && (clipElementId == 0 || (!Unsafe.IsNullRef(in clipItem) && __PointIsInsideRect(position, clipItem.BoundingBox)) || context.ExternalScrollHandlingEnabled))
+                    {
+                        mapItem.OnHoverFunction?.Invoke(mapItem.ElementId, context.PointerInfo, mapItem.HoverFunctionUserData);
+                        context.PointerOverIds.Add(mapItem.ElementId);
+                        found = true;
+                    }
+
+                    for (int i = currentElement.Children.Length - 1; i >= 0; --i)
+                    {
+                        dfsBuffer.Add(currentElement.Children.Elements[currentElement.Children.Offset + i].Index);
+                        context.TreeNodeVisited.InternalArray[dfsBuffer.Length - 1] = false; // TODO needs to be ranged checked.
+                    }
+                }
+                else
+                {
+                    dfsBuffer.Length--;
+                }
+            }
+
+            LayoutElement rootElement = context.LayoutElements.InternalArray[root.LayoutElementIndex];
+            if (found && rootElement.Config.Floating.AttachTo != FloatingAttachToElement.None
+                      && rootElement.Config.Floating.PointerCaptureMode == PointerCaptureMode.Capture)
+            {
+                break;
+            }
+        }
+
+        if (isPointerDown)
+        {
+            if (context.PointerInfo.State == PointerDataInteractionState.PressedThisFrame)
+            {
+                context.PointerInfo.State = PointerDataInteractionState.Pressed;
+            }
+            else if (context.PointerInfo.State != PointerDataInteractionState.Pressed)
+            {
+                context.PointerInfo.State = PointerDataInteractionState.PressedThisFrame;
+            }
+        }
+        else
+        {
+            if (context.PointerInfo.State == PointerDataInteractionState.ReleasedThisFrame)
+            {
+                context.PointerInfo.State = PointerDataInteractionState.Released;
+            }
+            else if (context.PointerInfo.State != PointerDataInteractionState.Released)
+            {
+                context.PointerInfo.State = PointerDataInteractionState.ReleasedThisFrame;
+            }
+        }
+    }
+
+    public static PointerData GetPointerState() => GetCurrentContext()!.PointerInfo;
+
+    public static Vector2 GetScrollOffset()
+    {
+        var context = GetCurrentContext()!;
+        if (context.BooleanWarnings.MaxElementsExceeded) return default;
+        LayoutElement openLayoutElement = __GetOpenLayoutElement();
+        for (int i = 0; i < context.ScrollContainerDatas.Length; i++)
+        {
+            ScrollContainerDataInternal mapping = context.ScrollContainerDatas.InternalArray[i];
+            if (mapping.ElementId == openLayoutElement.Id) return mapping.ScrollPosition;
+        }
+        return default;
+    }
+
+    public static void UpdateScrollContainers(bool enableDragScrolling, Vector2 scrollDelta, float deltaTime)
+    {
+        var context = GetCurrentContext()!;
+        bool isPointerActive = enableDragScrolling && (context.PointerInfo.State == PointerDataInteractionState.Pressed
+                                                       || context.PointerInfo.State == PointerDataInteractionState.PressedThisFrame);
+
+        // Don't apply scroll events to ancestors of the inner element.
+        int highestPriorityElementIndex = -1;
+        ref ScrollContainerDataInternal highestPriorityScrollData = ref Unsafe.NullRef<ScrollContainerDataInternal>();
+
+        for (int i = 0; i < context.ScrollContainerDatas.Length; i++)
+        {
+            ref ScrollContainerDataInternal scrollData = ref context.ScrollContainerDatas.InternalArray[i];
+            if (!scrollData.OpenThisFrame)
+            {
+                context.ScrollContainerDatas.RemoveSwapback(i);
+                continue;
+            }
+            scrollData.OpenThisFrame = false;
+            ref LayoutElementHashMapItem hashMapItem = ref __GetHashMapItem(scrollData.ElementId);
+            // Element isn't rendered this frame but scroll offset has been retained.
+            if (Unsafe.IsNullRef(in hashMapItem))
+            {
+                context.ScrollContainerDatas.RemoveSwapback(i);
+                continue;
+            }
+
+            // Touch / click is released.
+            if (!isPointerActive && scrollData.PointerScrollActive)
+            {
+                float xDiff = scrollData.ScrollPosition.X - scrollData.ScrollOrigin.X;
+                if (xDiff < -10 || xDiff > 10)
+                {
+                    scrollData.ScrollMomentum.X = (scrollData.ScrollPosition.X - scrollData.ScrollOrigin.X) / (scrollData.MomentumTime * 25);
+                }
+                float yDiff = scrollData.ScrollPosition.Y - scrollData.ScrollOrigin.Y;
+                if (yDiff < -10 || yDiff > 10)
+                {
+                    scrollData.ScrollMomentum.Y = (scrollData.ScrollPosition.Y - scrollData.ScrollOrigin.Y) / (scrollData.MomentumTime * 25);
+                }
+                scrollData.PointerScrollActive = false;
+                scrollData.PointerOrigin = default;
+                scrollData.ScrollOrigin = default;
+                scrollData.MomentumTime = 0;
+            }
+
+            // Apply existing momentum.
+            scrollData.ScrollPosition.X += scrollData.ScrollMomentum.X;
+            scrollData.ScrollMomentum.X *= 0.95f;
+            bool scrollOccurred = scrollDelta.X != 0 || scrollDelta.Y != 0;
+            if ((scrollData.ScrollMomentum.X > -0.1f && scrollData.ScrollMomentum.X < 0.1f) || scrollOccurred)
+            {
+                scrollData.ScrollMomentum.X = 0;
+            }
+            scrollData.ScrollPosition.X = MathF.Min(MathF.Max(scrollData.ScrollPosition.X, -MathF.Max(scrollData.ContentSize.Width - scrollData.LayoutElement.Dimensions.Width, 0)), 0);
+
+            scrollData.ScrollPosition.Y += scrollData.ScrollMomentum.Y;
+            scrollData.ScrollMomentum.Y *= 0.95f;
+            if ((scrollData.ScrollMomentum.Y > -0.1f && scrollData.ScrollMomentum.Y < 0.1f) || scrollOccurred)
+            {
+                scrollData.ScrollMomentum.Y = 0;
+            }
+            scrollData.ScrollPosition.Y = MathF.Min(MathF.Max(scrollData.ScrollPosition.Y, -MathF.Max(scrollData.ContentSize.Height - scrollData.LayoutElement.Dimensions.Height, 0)), 0);
+
+            for (int j = 0; j < context.PointerOverIds.Length; ++j) // TODO n & m are small here but n*m gives me the creeps.
+            {
+                if (scrollData.LayoutElement.Id == context.PointerOverIds.InternalArray[j].Id)
+                {
+                    highestPriorityElementIndex = j;
+                    highestPriorityScrollData = ref scrollData;
+                }
+            }
+        }
+
+        if (highestPriorityElementIndex > -1 && !Unsafe.IsNullRef(in highestPriorityScrollData))
+        {
+            LayoutElement scrollElement = highestPriorityScrollData.LayoutElement;
+            ref ClipElementConfig clipConfig = ref scrollElement.Config.Clip;
+            bool canScrollVertically = clipConfig.Vertical && highestPriorityScrollData.ContentSize.Height > scrollElement.Dimensions.Height;
+            bool canScrollHorizontally = clipConfig.Horizontal && highestPriorityScrollData.ContentSize.Width > scrollElement.Dimensions.Width;
+
+            // Handle wheel scroll.
+            if (canScrollVertically)
+            {
+                highestPriorityScrollData.ScrollPosition.Y = highestPriorityScrollData.ScrollPosition.Y + scrollDelta.Y * 10;
+            }
+            if (canScrollHorizontally)
+            {
+                highestPriorityScrollData.ScrollPosition.X = highestPriorityScrollData.ScrollPosition.X + scrollDelta.X * 10;
+            }
+
+            // Handle click / touch scroll.
+            if (isPointerActive)
+            {
+                highestPriorityScrollData.ScrollMomentum = default;
+                if (!highestPriorityScrollData.PointerScrollActive)
+                {
+                    highestPriorityScrollData.PointerOrigin = context.PointerInfo.Position;
+                    highestPriorityScrollData.ScrollOrigin = highestPriorityScrollData.ScrollPosition;
+                    highestPriorityScrollData.PointerScrollActive = true;
+                }
+                else
+                {
+                    float scrollDeltaX = 0, scrollDeltaY = 0;
+                    if (canScrollHorizontally)
+                    {
+                        float oldXScrollPosition = highestPriorityScrollData.ScrollPosition.X;
+                        highestPriorityScrollData.ScrollPosition.X = highestPriorityScrollData.ScrollOrigin.X + (context.PointerInfo.Position.X - highestPriorityScrollData.PointerOrigin.X);
+                        highestPriorityScrollData.ScrollPosition.X = MathF.Max(MathF.Min(highestPriorityScrollData.ScrollPosition.X, 0), -(highestPriorityScrollData.ContentSize.Width - highestPriorityScrollData.BoundingBox.Width));
+                        scrollDeltaX = highestPriorityScrollData.ScrollPosition.X - oldXScrollPosition;
+                    }
+                    if (canScrollVertically)
+                    {
+                        float oldYScrollPosition = highestPriorityScrollData.ScrollPosition.Y;
+                        highestPriorityScrollData.ScrollPosition.Y = highestPriorityScrollData.ScrollOrigin.Y + (context.PointerInfo.Position.Y - highestPriorityScrollData.PointerOrigin.Y);
+                        highestPriorityScrollData.ScrollPosition.Y = MathF.Max(MathF.Min(highestPriorityScrollData.ScrollPosition.Y, 0), -(highestPriorityScrollData.ContentSize.Height - highestPriorityScrollData.BoundingBox.Height));
+                        scrollDeltaY = highestPriorityScrollData.ScrollPosition.Y - oldYScrollPosition;
+                    }
+                    if (scrollDeltaX > -0.1f && scrollDeltaX < 0.1f && scrollDeltaY > -0.1f && scrollDeltaY < 0.1f && highestPriorityScrollData.MomentumTime > 0.15f)
+                    {
+                        highestPriorityScrollData.MomentumTime = 0;
+                        highestPriorityScrollData.PointerOrigin = context.PointerInfo.Position;
+                        highestPriorityScrollData.ScrollOrigin = highestPriorityScrollData.ScrollPosition;
+                    }
+                    else
+                    {
+                        highestPriorityScrollData.MomentumTime += deltaTime;
+                    }
+                }
+            }
+
+            // Clamp any changes to scroll position to the maximum size of the contents.
+            if (canScrollVertically)
+            {
+                highestPriorityScrollData.ScrollPosition.Y = MathF.Max(MathF.Min(highestPriorityScrollData.ScrollPosition.Y, 0), -(highestPriorityScrollData.ContentSize.Height - scrollElement.Dimensions.Height));
+            }
+            if (canScrollHorizontally)
+            {
+                highestPriorityScrollData.ScrollPosition.X = MathF.Max(MathF.Min(highestPriorityScrollData.ScrollPosition.X, 0), -(highestPriorityScrollData.ContentSize.Width - scrollElement.Dimensions.Width));
+            }
+        }
+    }
+
+    public static void BeginLayout()
+    {
+        var context = GetCurrentContext()!;
+        context.InitializeEphemeralMemory();
+        context.Generation++;
+        context.DynamicElementIndex = 0;
+
+        // Set up the root container that covers the entire window.
+        Dimensions rootDimensions = new Dimensions { Width = context.LayoutDimensions.Width, Height = context.LayoutDimensions.Height };
+        if (context.DebugModeEnabled)
+        {
+            // The debug inspector consumes the right-hand strip, so keep the root width reduction for parity with C.
+            rootDimensions.Width -= DebugViewWidth;
+        }
+        context.BooleanWarnings = default;
+        __OpenElementWithId(Id("_RootContainer"));
+        __ConfigureOpenElement(new ElementDeclaration
+        {
+            Layout = new LayoutConfig
+            {
+                Sizing = new Sizing
+                {
+                    Width = SizingFixed(rootDimensions.Width),
+                    Height = SizingFixed(rootDimensions.Height),
+                },
+            },
+        });
+        context.OpenLayoutElementStack.Add(0);
+        context.LayoutElementTreeRoots.Add(new LayoutElementTreeRoot { LayoutElementIndex = 0 });
+    }
+
+    internal static void __ApplyTransitionedPropertiesToElement(LayoutElement currentElement, TransitionProperty properties, TransitionData currentTransitionData, ref BoundingBox boundingBox, bool reparented)
+    {
+        if ((properties & TransitionProperty.Width) != 0)
+        {
+            if (!reparented)
+            {
+                currentElement.Dimensions.Width = currentTransitionData.BoundingBox.Width;
+                currentElement.Config.Layout.Sizing.Width = SizingFixed(currentTransitionData.BoundingBox.Width);
+            }
+            else
+            {
+                boundingBox.Width = currentTransitionData.BoundingBox.Width;
+            }
+        }
+        if ((properties & TransitionProperty.Height) != 0)
+        {
+            if (!reparented)
+            {
+                currentElement.Dimensions.Height = currentTransitionData.BoundingBox.Height;
+                currentElement.Config.Layout.Sizing.Height = SizingFixed(currentTransitionData.BoundingBox.Height);
+            }
+            else
+            {
+                boundingBox.Height = currentTransitionData.BoundingBox.Height;
+            }
+        }
+        if ((properties & TransitionProperty.X) != 0)
+        {
+            boundingBox.X = currentTransitionData.BoundingBox.X;
+        }
+        if ((properties & TransitionProperty.Y) != 0)
+        {
+            boundingBox.Y = currentTransitionData.BoundingBox.Y;
+        }
+        if ((properties & TransitionProperty.OverlayColor) != 0)
+        {
+            currentElement.Config.OverlayColor = currentTransitionData.OverlayColor;
+        }
+        if ((properties & TransitionProperty.BackgroundColor) != 0)
+        {
+            currentElement.Config.BackgroundColor = currentTransitionData.BackgroundColor;
+        }
+        if ((properties & TransitionProperty.BorderColor) != 0)
+        {
+            currentElement.Config.Border.Color = currentTransitionData.BorderColor;
+        }
+        if ((properties & TransitionProperty.BorderWidth) != 0)
+        {
+            currentElement.Config.Border.Width = currentTransitionData.BorderWidth;
+        }
+    }
+
+    public static RenderCommandArray EndLayout(float deltaTime)
+    {
+        var context = GetCurrentContext()!;
+        __CloseElement();
+
+        if (context.OpenLayoutElementStack.Length > 1)
+        {
+            context.Error(ErrorType.UnbalancedOpenClose,
+                "There were still open layout elements when EndLayout was called. This results from an unequal number of calls to _OpenElement and _CloseElement.");
+        }
+
+        // Prune non exiting transitions.
+        for (int i = 0; i < context.TransitionDatas.Length; ++i)
+        {
+            ref TransitionDataInternal data = ref context.TransitionDatas.InternalArray[i];
+            ref LayoutElementHashMapItem hashMapItem = ref __GetHashMapItem(data.ElementId);
+            // Transition element exited and doesn't have an exit handler defined,
+            // or the user deleted the transition handler from one frame to the next.
+            if (!data.TransitionOut
+                && (Unsafe.IsNullRef(in hashMapItem) || hashMapItem.Generation <= context.Generation || hashMapItem.LayoutElement == null || hashMapItem.LayoutElement.Config.Transition.Handler == null))
+            {
+                context.TransitionDatas.RemoveSwapback(i);
+                i--;
+                continue;
+            }
+        }
+
+        Array<int> elementIdsToRemoveTransitions = context.ReusableElementIndexBuffer;
+        elementIdsToRemoveTransitions.Length = 0;
+
+        for (int i = 0; i < context.TransitionDatas.Length; ++i)
+        {
+            ref TransitionDataInternal data = ref context.TransitionDatas.InternalArray[i];
+            ref LayoutElementHashMapItem hashMapItem = ref __GetHashMapItem(data.ElementId);
+            if (data.TransitionOut)
+            {
+                TransitionElementConfig config = data.ElementThisFrame.Config.Transition;
+                // Element wasn't found this frame - either delete transition data or transition out.
+                if (!Unsafe.IsNullRef(in hashMapItem) && hashMapItem.Generation <= context.Generation)
+                {
+                    ref LayoutElementHashMapItem parentHashMapItem = ref __GetHashMapItem(data.ParentId);
+                    // Don't exit transition if the parent has also exited and SKIP_WHEN_PARENT_EXITS is used.
+                    if (config.Exit.Trigger == TransitionExitTriggerType.TransitionExitTriggerWhenParentExits
+                        || Unsafe.IsNullRef(in parentHashMapItem) || parentHashMapItem.Generation > context.Generation)
+                    {
+                        // This if only runs one single time when the element first starts exiting.
+                        if (data.State != TransitionState.Exiting)
+                        {
+                            if (Unsafe.IsNullRef(in parentHashMapItem) || parentHashMapItem.Generation <= context.Generation)
+                            {
+                                data.ElementThisFrame.Config.Floating.AttachTo = FloatingAttachToElement.Root;
+                                data.ElementThisFrame.Config.Floating.Offset = new Vector2(hashMapItem.BoundingBox.X, hashMapItem.BoundingBox.Y);
+                                data.ElementThisFrame.Config.Floating.ParentId = __HashString("_RootContainer", 0).Id;
+                            }
+                            hashMapItem.AppearedThisFrame = false;
+                            data.ElementThisFrame.Exiting = true;
+                            data.ElementThisFrame.Config.Layout.Sizing.Width = SizingFixed(data.ElementThisFrame.Dimensions.Width);
+                            data.ElementThisFrame.Config.Layout.Sizing.Height = SizingFixed(data.ElementThisFrame.Dimensions.Height);
+                            data.State = TransitionState.Exiting;
+                            data.ActiveProperties = config.Properties;
+                            data.ElapsedTime = 0;
+                            data.TargetState = config.Exit.SetFinalState!(data.TargetState, config.Properties);
+                        }
+
+                        // Below this line runs every frame while element is exiting.
+
+                        // Clone the entire subtree back into the main UI layout tree.
+                        Array<int> bfsBuffer = context.OpenLayoutElementStack;
+                        bfsBuffer.Length = 0;
+                        int oldElementIndex = data.ElementThisFrame.Index;
+                        LayoutElement exitingElement = data.ElementThisFrame.Clone();
+                        context.LayoutElements.Add(exitingElement);
+                        int exitingElementIndex = context.LayoutElements.Length - 1;
+                        exitingElement.Index = exitingElementIndex;
+                        context.LayoutElementClipElementIds.Set(exitingElementIndex, context.LayoutElementClipElementIds.GetValue(oldElementIndex));
+                        data.ElementThisFrame = exitingElement;
+                        bfsBuffer.Add(exitingElementIndex);
+
+                        int bufferIndex = 0;
+                        while (bufferIndex < bfsBuffer.Length)
+                        {
+                            LayoutElement layoutElement = context.LayoutElements.InternalArray[bfsBuffer.InternalArray[bufferIndex]];
+                            ref LayoutElementHashMapItem bfsMapItem = ref __GetHashMapItem(layoutElement.Id);
+                            // Children of exiting elements may have been moved elsewhere in the layout; this prevents a duplicate ID error.
+                            if (Unsafe.IsNullRef(in bfsMapItem) || bfsMapItem.Generation <= context.Generation)
+                            {
+                                __AddHashMapItem(new ElementId { Id = layoutElement.Id }, layoutElement, layoutElement.Index);
+                                int firstChildSlot = context.LayoutElementChildren.Length;
+                                ushort newChildrenLength = layoutElement.Children.Length;
+                                for (int j = 0; j < layoutElement.Children.Length; ++j)
+                                {
+                                    LayoutElement childElement = layoutElement.Children.Elements[layoutElement.Children.Offset + j];
+                                    ref LayoutElementHashMapItem childMapItem = ref __GetHashMapItem(childElement.Id);
+                                    if (Unsafe.IsNullRef(in childMapItem) || childMapItem.Generation <= context.Generation)
+                                    {
+                                        // Remove any nested transitions inside exiting trees.
+                                        if (!childElement.IsTextElement && childElement.Config.Transition.Handler != null)
+                                        {
+                                            elementIdsToRemoveTransitions.Add((int)childElement.Id);
+                                        }
+                                        int oldChildIndex = childElement.Index;
+                                        LayoutElement newChildElement = childElement.Clone();
+                                        context.LayoutElements.Add(newChildElement);
+                                        int newChildIndex = context.LayoutElements.Length - 1;
+                                        newChildElement.Index = newChildIndex;
+                                        context.LayoutElementClipElementIds.Set(newChildIndex, context.LayoutElementClipElementIds.GetValue(oldChildIndex));
+                                        bfsBuffer.Add(newChildIndex);
+                                        if (newChildElement.IsTextElement)
+                                        {
+                                            newChildElement.TextElementData.WrappedLines.Length = 0;
+                                        }
+                                        context.LayoutElementChildren.Add(newChildElement);
+                                    }
+                                    else
+                                    {
+                                        newChildrenLength--;
+                                    }
+                                }
+                                layoutElement.Children = new LayoutElementChildren
+                                {
+                                    Elements = context.LayoutElementChildren.InternalArray,
+                                    Offset = firstChildSlot,
+                                    Length = newChildrenLength,
+                                };
+                            }
+                            bufferIndex++;
+                        }
+                        hashMapItem.LayoutElement = exitingElement;
+                        hashMapItem.LayoutElementIndex = exitingElementIndex;
+
+                        // Reattach the inserted subtree to its previous parent if it still exists and the exiting element is not floating.
+                        FloatingElementConfig floatingConfig = hashMapItem.LayoutElement.Config.Floating;
+                        if (!Unsafe.IsNullRef(in parentHashMapItem) && parentHashMapItem.Generation > context.Generation && floatingConfig.AttachTo == FloatingAttachToElement.None)
+                        {
+                            LayoutElement parentElement = parentHashMapItem.LayoutElement;
+                            int newChildrenStartIndex = context.LayoutElementChildren.Length;
+                            bool found = false;
+                            if (config.Exit.SiblingOrdering == ExitTransitionSiblingOrdering.UnderneathSiblings)
+                            {
+                                context.LayoutElementChildren.Add(exitingElement);
+                                found = true;
+                            }
+                            for (int j = 0; j < parentElement.Children.Length; ++j)
+                            {
+                                if (config.Exit.SiblingOrdering == ExitTransitionSiblingOrdering.NaturalOrder && j == data.SiblingIndex)
+                                {
+                                    context.LayoutElementChildren.Add(exitingElement);
+                                    found = true;
+                                }
+                                context.LayoutElementChildren.Add(parentElement.Children.Elements[parentElement.Children.Offset + j]);
+                            }
+                            if (!found)
+                            {
+                                context.LayoutElementChildren.Add(exitingElement);
+                            }
+                            parentElement.Children.Length++;
+                            parentElement.Children.Elements = context.LayoutElementChildren.InternalArray;
+                            parentElement.Children.Offset = newChildrenStartIndex;
+                        }
+                        // Otherwise, create the tree root for the floating element (needs to be created every frame).
+                        else
+                        {
+                            context.LayoutElementTreeRoots.Add(new LayoutElementTreeRoot
+                            {
+                                LayoutElementIndex = exitingElementIndex,
+                                ParentId = floatingConfig.ParentId,
+                                ZIndex = floatingConfig.ZIndex,
+                            });
+                        }
+                    }
+                    // Parent exited, just delete child without exit transition.
+                    else
+                    {
+                        context.TransitionDatas.RemoveSwapback(i);
+                        i--;
+                        continue;
+                    }
+                }
+            }
+        }
+
+        // Remove nested transitions.
+        for (int i = 0; i < elementIdsToRemoveTransitions.Length; ++i)
+        {
+            for (int j = 0; j < context.TransitionDatas.Length; ++j)
+            {
+                if (context.TransitionDatas.InternalArray[j].ElementId == (uint)elementIdsToRemoveTransitions.InternalArray[i])
+                {
+                    context.TransitionDatas.RemoveSwapback(j);
                     break;
                 }
             }
-
-            if (isPointerDown)
-            {
-                if (context.pointerInfo.state == Clay_PointerDataInteractionState.CLAY_POINTER_DATA_PRESSED_THIS_FRAME)
-                {
-                    context.pointerInfo.state = Clay_PointerDataInteractionState.CLAY_POINTER_DATA_PRESSED;
-                }
-                else if (context.pointerInfo.state != Clay_PointerDataInteractionState.CLAY_POINTER_DATA_PRESSED)
-                {
-                    context.pointerInfo.state = Clay_PointerDataInteractionState.CLAY_POINTER_DATA_PRESSED_THIS_FRAME;
-                }
-            }
-            else
-            {
-                if (context.pointerInfo.state == Clay_PointerDataInteractionState.CLAY_POINTER_DATA_RELEASED_THIS_FRAME)
-                {
-                    context.pointerInfo.state = Clay_PointerDataInteractionState.CLAY_POINTER_DATA_RELEASED;
-                }
-                else if (context.pointerInfo.state != Clay_PointerDataInteractionState.CLAY_POINTER_DATA_RELEASED)
-                {
-                    context.pointerInfo.state = Clay_PointerDataInteractionState.CLAY_POINTER_DATA_RELEASED_THIS_FRAME;
-                }
-            }
         }
 
-        public static Clay_PointerData GetPointerState() => GetCurrentContext()!.pointerInfo;
-
-        public static Vector2 GetScrollOffset()
+        if (context.BooleanWarnings.MaxElementsExceeded)
         {
-            var context = GetCurrentContext()!;
-            if (context.booleanWarnings.maxElementsExceeded) return default;
-            Clay_LayoutElement openLayoutElement = __GetOpenLayoutElement();
-            for (int i = 0; i < context.scrollContainerDatas.length; i++)
+            const string message = "Clay Error: Layout elements exceeded _maxElementCount";
+            __AddRenderCommand(new RenderCommand
             {
-                Clay__ScrollContainerDataInternal mapping = context.scrollContainerDatas.internalArray[i];
-                if (mapping.elementId == openLayoutElement.id) return mapping.scrollPosition;
-            }
-            return default;
-        }
-
-        public static void UpdateScrollContainers(bool enableDragScrolling, Vector2 scrollDelta, float deltaTime)
-        {
-            var context = GetCurrentContext()!;
-            bool isPointerActive = enableDragScrolling && (context.pointerInfo.state == Clay_PointerDataInteractionState.CLAY_POINTER_DATA_PRESSED
-                || context.pointerInfo.state == Clay_PointerDataInteractionState.CLAY_POINTER_DATA_PRESSED_THIS_FRAME);
-
-            // Don't apply scroll events to ancestors of the inner element.
-            int highestPriorityElementIndex = -1;
-            ref Clay__ScrollContainerDataInternal highestPriorityScrollData = ref Unsafe.NullRef<Clay__ScrollContainerDataInternal>();
-
-            for (int i = 0; i < context.scrollContainerDatas.length; i++)
-            {
-                ref Clay__ScrollContainerDataInternal scrollData = ref context.scrollContainerDatas.internalArray[i];
-                if (!scrollData.openThisFrame)
+                BoundingBox = new BoundingBox(context.LayoutDimensions.Width / 2 - 59 * 4, context.LayoutDimensions.Height / 2, 0, 0),
+                RenderData = new RenderData
                 {
-                    context.scrollContainerDatas.RemoveSwapback(i);
-                    continue;
-                }
-                scrollData.openThisFrame = false;
-                ref Clay_LayoutElementHashMapItem hashMapItem = ref __GetHashMapItem(scrollData.elementId);
-                // Element isn't rendered this frame but scroll offset has been retained.
-                if (Unsafe.IsNullRef(in hashMapItem))
-                {
-                    context.scrollContainerDatas.RemoveSwapback(i);
-                    continue;
-                }
-
-                // Touch / click is released.
-                if (!isPointerActive && scrollData.pointerScrollActive)
-                {
-                    float xDiff = scrollData.scrollPosition.X - scrollData.scrollOrigin.X;
-                    if (xDiff < -10 || xDiff > 10)
+                    Text = new TextRenderData
                     {
-                        scrollData.scrollMomentum.X = (scrollData.scrollPosition.X - scrollData.scrollOrigin.X) / (scrollData.momentumTime * 25);
-                    }
-                    float yDiff = scrollData.scrollPosition.Y - scrollData.scrollOrigin.Y;
-                    if (yDiff < -10 || yDiff > 10)
-                    {
-                        scrollData.scrollMomentum.Y = (scrollData.scrollPosition.Y - scrollData.scrollOrigin.Y) / (scrollData.momentumTime * 25);
-                    }
-                    scrollData.pointerScrollActive = false;
-                    scrollData.pointerOrigin = default;
-                    scrollData.scrollOrigin = default;
-                    scrollData.momentumTime = 0;
-                }
-
-                // Apply existing momentum.
-                scrollData.scrollPosition.X += scrollData.scrollMomentum.X;
-                scrollData.scrollMomentum.X *= 0.95f;
-                bool scrollOccurred = scrollDelta.X != 0 || scrollDelta.Y != 0;
-                if ((scrollData.scrollMomentum.X > -0.1f && scrollData.scrollMomentum.X < 0.1f) || scrollOccurred)
-                {
-                    scrollData.scrollMomentum.X = 0;
-                }
-                scrollData.scrollPosition.X = MathF.Min(MathF.Max(scrollData.scrollPosition.X, -MathF.Max(scrollData.contentSize.width - scrollData.layoutElement.dimensions.width, 0)), 0);
-
-                scrollData.scrollPosition.Y += scrollData.scrollMomentum.Y;
-                scrollData.scrollMomentum.Y *= 0.95f;
-                if ((scrollData.scrollMomentum.Y > -0.1f && scrollData.scrollMomentum.Y < 0.1f) || scrollOccurred)
-                {
-                    scrollData.scrollMomentum.Y = 0;
-                }
-                scrollData.scrollPosition.Y = MathF.Min(MathF.Max(scrollData.scrollPosition.Y, -MathF.Max(scrollData.contentSize.height - scrollData.layoutElement.dimensions.height, 0)), 0);
-
-                for (int j = 0; j < context.pointerOverIds.length; ++j) // TODO n & m are small here but n*m gives me the creeps.
-                {
-                    if (scrollData.layoutElement.id == context.pointerOverIds.internalArray[j].id)
-                    {
-                        highestPriorityElementIndex = j;
-                        highestPriorityScrollData = ref scrollData;
-                    }
-                }
-            }
-
-            if (highestPriorityElementIndex > -1 && !Unsafe.IsNullRef(in highestPriorityScrollData))
-            {
-                Clay_LayoutElement scrollElement = highestPriorityScrollData.layoutElement;
-                ref Clay_ClipElementConfig clipConfig = ref scrollElement.config.clip;
-                bool canScrollVertically = clipConfig.vertical && highestPriorityScrollData.contentSize.height > scrollElement.dimensions.height;
-                bool canScrollHorizontally = clipConfig.horizontal && highestPriorityScrollData.contentSize.width > scrollElement.dimensions.width;
-
-                // Handle wheel scroll.
-                if (canScrollVertically)
-                {
-                    highestPriorityScrollData.scrollPosition.Y = highestPriorityScrollData.scrollPosition.Y + scrollDelta.Y * 10;
-                }
-                if (canScrollHorizontally)
-                {
-                    highestPriorityScrollData.scrollPosition.X = highestPriorityScrollData.scrollPosition.X + scrollDelta.X * 10;
-                }
-
-                // Handle click / touch scroll.
-                if (isPointerActive)
-                {
-                    highestPriorityScrollData.scrollMomentum = default;
-                    if (!highestPriorityScrollData.pointerScrollActive)
-                    {
-                        highestPriorityScrollData.pointerOrigin = context.pointerInfo.position;
-                        highestPriorityScrollData.scrollOrigin = highestPriorityScrollData.scrollPosition;
-                        highestPriorityScrollData.pointerScrollActive = true;
-                    }
-                    else
-                    {
-                        float scrollDeltaX = 0, scrollDeltaY = 0;
-                        if (canScrollHorizontally)
-                        {
-                            float oldXScrollPosition = highestPriorityScrollData.scrollPosition.X;
-                            highestPriorityScrollData.scrollPosition.X = highestPriorityScrollData.scrollOrigin.X + (context.pointerInfo.position.X - highestPriorityScrollData.pointerOrigin.X);
-                            highestPriorityScrollData.scrollPosition.X = MathF.Max(MathF.Min(highestPriorityScrollData.scrollPosition.X, 0), -(highestPriorityScrollData.contentSize.width - highestPriorityScrollData.boundingBox.width));
-                            scrollDeltaX = highestPriorityScrollData.scrollPosition.X - oldXScrollPosition;
-                        }
-                        if (canScrollVertically)
-                        {
-                            float oldYScrollPosition = highestPriorityScrollData.scrollPosition.Y;
-                            highestPriorityScrollData.scrollPosition.Y = highestPriorityScrollData.scrollOrigin.Y + (context.pointerInfo.position.Y - highestPriorityScrollData.pointerOrigin.Y);
-                            highestPriorityScrollData.scrollPosition.Y = MathF.Max(MathF.Min(highestPriorityScrollData.scrollPosition.Y, 0), -(highestPriorityScrollData.contentSize.height - highestPriorityScrollData.boundingBox.height));
-                            scrollDeltaY = highestPriorityScrollData.scrollPosition.Y - oldYScrollPosition;
-                        }
-                        if (scrollDeltaX > -0.1f && scrollDeltaX < 0.1f && scrollDeltaY > -0.1f && scrollDeltaY < 0.1f && highestPriorityScrollData.momentumTime > 0.15f)
-                        {
-                            highestPriorityScrollData.momentumTime = 0;
-                            highestPriorityScrollData.pointerOrigin = context.pointerInfo.position;
-                            highestPriorityScrollData.scrollOrigin = highestPriorityScrollData.scrollPosition;
-                        }
-                        else
-                        {
-                            highestPriorityScrollData.momentumTime += deltaTime;
-                        }
-                    }
-                }
-
-                // Clamp any changes to scroll position to the maximum size of the contents.
-                if (canScrollVertically)
-                {
-                    highestPriorityScrollData.scrollPosition.Y = MathF.Max(MathF.Min(highestPriorityScrollData.scrollPosition.Y, 0), -(highestPriorityScrollData.contentSize.height - scrollElement.dimensions.height));
-                }
-                if (canScrollHorizontally)
-                {
-                    highestPriorityScrollData.scrollPosition.X = MathF.Max(MathF.Min(highestPriorityScrollData.scrollPosition.X, 0), -(highestPriorityScrollData.contentSize.width - scrollElement.dimensions.width));
-                }
-            }
-        }
-
-        public static void BeginLayout()
-        {
-            var context = GetCurrentContext()!;
-            context.InitializeEphemeralMemory();
-            context.generation++;
-            context.dynamicElementIndex = 0;
-
-            // Set up the root container that covers the entire window.
-            Clay_Dimensions rootDimensions = new Clay_Dimensions { width = context.layoutDimensions.width, height = context.layoutDimensions.height };
-            if (context.debugModeEnabled)
-            {
-                // The debug inspector consumes the right-hand strip, so keep the root width reduction for parity with C.
-                rootDimensions.width -= __debugViewWidth;
-            }
-            context.booleanWarnings = default;
-            __OpenElementWithId(Id("Clay__RootContainer"));
-            __ConfigureOpenElement(new Clay_ElementDeclaration
-            {
-                layout = new Clay_LayoutConfig
-                {
-                    sizing = new Clay_Sizing
-                    {
-                        width = SizingFixed(rootDimensions.width),
-                        height = SizingFixed(rootDimensions.height),
+                        StringContents = new StringSegment(message),
+                        TextColor = new Color(255, 0, 0, 255),
+                        FontSize = 16,
                     },
                 },
+                CommandType = RenderCommandType.Text,
             });
-            context.openLayoutElementStack.Add(0);
-            context.layoutElementTreeRoots.Add(new Clay__LayoutElementTreeRoot { layoutElementIndex = 0 });
         }
-
-        internal static void __ApplyTransitionedPropertiesToElement(Clay_LayoutElement currentElement, Clay_TransitionProperty properties, Clay_TransitionData currentTransitionData, ref Clay_BoundingBox boundingBox, bool reparented)
+        else
         {
-            if ((properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_WIDTH) != 0)
+            if (context.TransitionDatas.Length > 0)
             {
-                if (!reparented)
-                {
-                    currentElement.dimensions.width = currentTransitionData.boundingBox.width;
-                    currentElement.config.layout.sizing.width = SizingFixed(currentTransitionData.boundingBox.width);
-                }
-                else
-                {
-                    boundingBox.width = currentTransitionData.boundingBox.width;
-                }
-            }
-            if ((properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_HEIGHT) != 0)
-            {
-                if (!reparented)
-                {
-                    currentElement.dimensions.height = currentTransitionData.boundingBox.height;
-                    currentElement.config.layout.sizing.height = SizingFixed(currentTransitionData.boundingBox.height);
-                }
-                else
-                {
-                    boundingBox.height = currentTransitionData.boundingBox.height;
-                }
-            }
-            if ((properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_X) != 0)
-            {
-                boundingBox.x = currentTransitionData.boundingBox.x;
-            }
-            if ((properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_Y) != 0)
-            {
-                boundingBox.y = currentTransitionData.boundingBox.y;
-            }
-            if ((properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_OVERLAY_COLOR) != 0)
-            {
-                currentElement.config.overlayColor = currentTransitionData.overlayColor;
-            }
-            if ((properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_BACKGROUND_COLOR) != 0)
-            {
-                currentElement.config.backgroundColor = currentTransitionData.backgroundColor;
-            }
-            if ((properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_BORDER_COLOR) != 0)
-            {
-                currentElement.config.border.color = currentTransitionData.borderColor;
-            }
-            if ((properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_BORDER_WIDTH) != 0)
-            {
-                currentElement.config.border.width = currentTransitionData.borderWidth;
-            }
-        }
+                __CalculateFinalLayout(deltaTime, false, false);
 
-        public static Clay_RenderCommandArray EndLayout(float deltaTime)
-        {
-            var context = GetCurrentContext()!;
-            __CloseElement();
-
-            if (context.openLayoutElementStack.length > 1)
-            {
-                context.Error(Clay_ErrorType.CLAY_ERROR_TYPE_UNBALANCED_OPEN_CLOSE,
-                    "There were still open layout elements when EndLayout was called. This results from an unequal number of calls to Clay__OpenElement and Clay__CloseElement.");
-            }
-
-            // Prune non exiting transitions.
-            for (int i = 0; i < context.transitionDatas.length; ++i)
-            {
-                ref Clay__TransitionDataInternal data = ref context.transitionDatas.internalArray[i];
-                ref Clay_LayoutElementHashMapItem hashMapItem = ref __GetHashMapItem(data.elementId);
-                // Transition element exited and doesn't have an exit handler defined,
-                // or the user deleted the transition handler from one frame to the next.
-                if (!data.transitionOut
-                    && (Unsafe.IsNullRef(in hashMapItem) || hashMapItem.generation <= context.generation || hashMapItem.layoutElement == null || hashMapItem.layoutElement.config.transition.handler == null))
+                for (int i = 0; i < context.TransitionDatas.Length; ++i)
                 {
-                    context.transitionDatas.RemoveSwapback(i);
-                    i--;
-                    continue;
-                }
-            }
+                    ref TransitionDataInternal transitionData = ref context.TransitionDatas.InternalArray[i];
+                    LayoutElement currentElement = transitionData.ElementThisFrame;
+                    ref LayoutElementHashMapItem mapItem = ref __GetHashMapItem(transitionData.ElementId);
+                    if (Unsafe.IsNullRef(in mapItem)) continue;
+                    ref LayoutElementHashMapItem parentMapItem = ref __GetHashMapItem(transitionData.ParentId);
 
-            ClayArray<int> elementIdsToRemoveTransitions = context.reusableElementIndexBuffer;
-            elementIdsToRemoveTransitions.length = 0;
-
-            for (int i = 0; i < context.transitionDatas.length; ++i)
-            {
-                ref Clay__TransitionDataInternal data = ref context.transitionDatas.internalArray[i];
-                ref Clay_LayoutElementHashMapItem hashMapItem = ref __GetHashMapItem(data.elementId);
-                if (data.transitionOut)
-                {
-                    Clay_TransitionElementConfig config = data.elementThisFrame.config.transition;
-                    // Element wasn't found this frame - either delete transition data or transition out.
-                    if (!Unsafe.IsNullRef(in hashMapItem) && hashMapItem.generation <= context.generation)
+                    TransitionData targetState = transitionData.TargetState;
+                    if (transitionData.State != TransitionState.Exiting)
                     {
-                        ref Clay_LayoutElementHashMapItem parentHashMapItem = ref __GetHashMapItem(data.parentId);
-                        // Don't exit transition if the parent has also exited and SKIP_WHEN_PARENT_EXITS is used.
-                        if (config.exit.trigger == Clay_TransitionExitTriggerType.CLAY_TRANSITION_EXIT_TRIGGER_WHEN_PARENT_EXITS
-                            || Unsafe.IsNullRef(in parentHashMapItem) || parentHashMapItem.generation > context.generation)
+                        targetState = new TransitionData
                         {
-                            // This if only runs one single time when the element first starts exiting.
-                            if (data.state != Clay_TransitionState.CLAY_TRANSITION_STATE_EXITING)
-                            {
-                                if (Unsafe.IsNullRef(in parentHashMapItem) || parentHashMapItem.generation <= context.generation)
-                                {
-                                    data.elementThisFrame.config.floating.attachTo = Clay_FloatingAttachToElement.CLAY_ATTACH_TO_ROOT;
-                                    data.elementThisFrame.config.floating.offset = new Vector2(hashMapItem.boundingBox.x, hashMapItem.boundingBox.y);
-                                    data.elementThisFrame.config.floating.parentId = __HashString("Clay__RootContainer", 0).id;
-                                }
-                                hashMapItem.appearedThisFrame = false;
-                                data.elementThisFrame.exiting = true;
-                                data.elementThisFrame.config.layout.sizing.width = SizingFixed(data.elementThisFrame.dimensions.width);
-                                data.elementThisFrame.config.layout.sizing.height = SizingFixed(data.elementThisFrame.dimensions.height);
-                                data.state = Clay_TransitionState.CLAY_TRANSITION_STATE_EXITING;
-                                data.activeProperties = config.properties;
-                                data.elapsedTime = 0;
-                                data.targetState = config.exit.setFinalState!(data.targetState, config.properties);
-                            }
+                            BoundingBox = mapItem.BoundingBox,
+                            BackgroundColor = currentElement.Config.BackgroundColor,
+                            OverlayColor = currentElement.Config.OverlayColor,
+                            BorderColor = currentElement.Config.Border.Color,
+                            BorderWidth = currentElement.Config.Border.Width,
+                        };
+                    }
+                    TransitionData oldTargetState = transitionData.TargetState;
+                    transitionData.TargetState = targetState;
 
-                            // Below this line runs every frame while element is exiting.
-
-                            // Clone the entire subtree back into the main UI layout tree.
-                            ClayArray<int> bfsBuffer = context.openLayoutElementStack;
-                            bfsBuffer.length = 0;
-                            int oldElementIndex = data.elementThisFrame.index;
-                            Clay_LayoutElement exitingElement = data.elementThisFrame.Clone();
-                            context.layoutElements.Add(exitingElement);
-                            int exitingElementIndex = context.layoutElements.length - 1;
-                            exitingElement.index = exitingElementIndex;
-                            context.layoutElementClipElementIds.Set(exitingElementIndex, context.layoutElementClipElementIds.GetValue(oldElementIndex));
-                            data.elementThisFrame = exitingElement;
-                            bfsBuffer.Add(exitingElementIndex);
-
-                            int bufferIndex = 0;
-                            while (bufferIndex < bfsBuffer.length)
-                            {
-                                Clay_LayoutElement layoutElement = context.layoutElements.internalArray[bfsBuffer.internalArray[bufferIndex]];
-                                ref Clay_LayoutElementHashMapItem bfsMapItem = ref __GetHashMapItem(layoutElement.id);
-                                // Children of exiting elements may have been moved elsewhere in the layout; this prevents a duplicate ID error.
-                                if (Unsafe.IsNullRef(in bfsMapItem) || bfsMapItem.generation <= context.generation)
-                                {
-                                    __AddHashMapItem(new Clay_ElementId { id = layoutElement.id }, layoutElement, layoutElement.index);
-                                    int firstChildSlot = context.layoutElementChildren.length;
-                                    ushort newChildrenLength = layoutElement.children.length;
-                                    for (int j = 0; j < layoutElement.children.length; ++j)
-                                    {
-                                        Clay_LayoutElement childElement = layoutElement.children.elements[layoutElement.children.offset + j];
-                                        ref Clay_LayoutElementHashMapItem childMapItem = ref __GetHashMapItem(childElement.id);
-                                        if (Unsafe.IsNullRef(in childMapItem) || childMapItem.generation <= context.generation)
-                                        {
-                                            // Remove any nested transitions inside exiting trees.
-                                            if (!childElement.isTextElement && childElement.config.transition.handler != null)
-                                            {
-                                                elementIdsToRemoveTransitions.Add((int)childElement.id);
-                                            }
-                                            int oldChildIndex = childElement.index;
-                                            Clay_LayoutElement newChildElement = childElement.Clone();
-                                            context.layoutElements.Add(newChildElement);
-                                            int newChildIndex = context.layoutElements.length - 1;
-                                            newChildElement.index = newChildIndex;
-                                            context.layoutElementClipElementIds.Set(newChildIndex, context.layoutElementClipElementIds.GetValue(oldChildIndex));
-                                            bfsBuffer.Add(newChildIndex);
-                                            if (newChildElement.isTextElement)
-                                            {
-                                                newChildElement.textElementData.wrappedLines.length = 0;
-                                            }
-                                            context.layoutElementChildren.Add(newChildElement);
-                                        }
-                                        else
-                                        {
-                                            newChildrenLength--;
-                                        }
-                                    }
-                                    layoutElement.children = new Clay__LayoutElementChildren
-                                    {
-                                        elements = context.layoutElementChildren.internalArray,
-                                        offset = firstChildSlot,
-                                        length = newChildrenLength,
-                                    };
-                                }
-                                bufferIndex++;
-                            }
-                            hashMapItem.layoutElement = exitingElement;
-                            hashMapItem.layoutElementIndex = exitingElementIndex;
-
-                            // Reattach the inserted subtree to its previous parent if it still exists and the exiting element is not floating.
-                            Clay_FloatingElementConfig floatingConfig = hashMapItem.layoutElement.config.floating;
-                            if (!Unsafe.IsNullRef(in parentHashMapItem) && parentHashMapItem.generation > context.generation && floatingConfig.attachTo == Clay_FloatingAttachToElement.CLAY_ATTACH_TO_NONE)
-                            {
-                                Clay_LayoutElement parentElement = parentHashMapItem.layoutElement;
-                                int newChildrenStartIndex = context.layoutElementChildren.length;
-                                bool found = false;
-                                if (config.exit.siblingOrdering == Clay_ExitTransitionSiblingOrdering.CLAY_EXIT_TRANSITION_ORDERING_UNDERNEATH_SIBLINGS)
-                                {
-                                    context.layoutElementChildren.Add(exitingElement);
-                                    found = true;
-                                }
-                                for (int j = 0; j < parentElement.children.length; ++j)
-                                {
-                                    if (config.exit.siblingOrdering == Clay_ExitTransitionSiblingOrdering.CLAY_EXIT_TRANSITION_ORDERING_NATURAL_ORDER && j == data.siblingIndex)
-                                    {
-                                        context.layoutElementChildren.Add(exitingElement);
-                                        found = true;
-                                    }
-                                    context.layoutElementChildren.Add(parentElement.children.elements[parentElement.children.offset + j]);
-                                }
-                                if (!found)
-                                {
-                                    context.layoutElementChildren.Add(exitingElement);
-                                }
-                                parentElement.children.length++;
-                                parentElement.children.elements = context.layoutElementChildren.internalArray;
-                                parentElement.children.offset = newChildrenStartIndex;
-                            }
-                            // Otherwise, create the tree root for the floating element (needs to be created every frame).
-                            else
-                            {
-                                context.layoutElementTreeRoots.Add(new Clay__LayoutElementTreeRoot
-                                {
-                                    layoutElementIndex = exitingElementIndex,
-                                    parentId = floatingConfig.parentId,
-                                    zIndex = floatingConfig.zIndex,
-                                });
-                            }
+                    if (mapItem.AppearedThisFrame)
+                    {
+                        if (currentElement.Config.Transition.Enter.SetInitialState != null
+                            && !(!Unsafe.IsNullRef(in parentMapItem) && parentMapItem.AppearedThisFrame && currentElement.Config.Transition.Enter.Trigger == TransitionEnterTriggerType.TransitionEnterSkipOnFirstParentFrame))
+                        {
+                            transitionData.State = TransitionState.Entering;
+                            transitionData.InitialState = currentElement.Config.Transition.Enter.SetInitialState(transitionData.TargetState, currentElement.Config.Transition.Properties);
+                            transitionData.CurrentState = transitionData.InitialState;
+                            transitionData.ActiveProperties = currentElement.Config.Transition.Properties;
+                            __ApplyTransitionedPropertiesToElement(currentElement, currentElement.Config.Transition.Properties, transitionData.InitialState, ref mapItem.BoundingBox, transitionData.Reparented);
                         }
-                        // Parent exited, just delete child without exit transition.
                         else
                         {
-                            context.transitionDatas.RemoveSwapback(i);
-                            i--;
-                            continue;
+                            transitionData.InitialState = targetState;
+                            transitionData.CurrentState = targetState;
+                            transitionData.ActiveProperties = TransitionProperty.None;
+                        }
+                    }
+                    else
+                    {
+                        if (transitionData.State != TransitionState.Exiting)
+                        {
+                            Vector2 parentScrollOffset = !Unsafe.IsNullRef(in parentMapItem) ? parentMapItem.LayoutElement.Config.Clip.ChildOffset : default;
+                            Vector2 newRelativePosition = new Vector2(
+                                mapItem.BoundingBox.X - (!Unsafe.IsNullRef(in parentMapItem) ? parentMapItem.BoundingBox.X : 0) - parentScrollOffset.X,
+                                mapItem.BoundingBox.Y - (!Unsafe.IsNullRef(in parentMapItem) ? parentMapItem.BoundingBox.Y : 0) - parentScrollOffset.Y);
+                            Vector2 oldRelativePosition = transitionData.OldParentRelativePosition;
+                            transitionData.OldParentRelativePosition = newRelativePosition;
+
+                            TransitionProperty properties = currentElement.Config.Transition.Properties;
+                            TransitionProperty newActiveProperties = TransitionProperty.None;
+                            if ((properties & TransitionProperty.X) != 0)
+                            {
+                                if (!__FloatEqual(oldTargetState.BoundingBox.X, targetState.BoundingBox.X)
+                                    && (!__FloatEqual(oldRelativePosition.X, newRelativePosition.X) || transitionData.Reparented)
+                                    && !context.RootResizedLastFrame)
+                                {
+                                    newActiveProperties |= TransitionProperty.X;
+                                }
+                            }
+                            if ((properties & TransitionProperty.Y) != 0)
+                            {
+                                if (!__FloatEqual(oldTargetState.BoundingBox.Y, targetState.BoundingBox.Y)
+                                    && (!__FloatEqual(oldRelativePosition.Y, newRelativePosition.Y) || transitionData.Reparented)
+                                    && !context.RootResizedLastFrame)
+                                {
+                                    newActiveProperties |= TransitionProperty.Y;
+                                }
+                            }
+                            if ((properties & TransitionProperty.Width) != 0)
+                            {
+                                if (!__FloatEqual(oldTargetState.BoundingBox.Width, targetState.BoundingBox.Width) && !context.RootResizedLastFrame)
+                                {
+                                    newActiveProperties |= TransitionProperty.Width;
+                                }
+                            }
+                            if ((properties & TransitionProperty.Height) != 0)
+                            {
+                                if (!__FloatEqual(oldTargetState.BoundingBox.Height, targetState.BoundingBox.Height) && !context.RootResizedLastFrame)
+                                {
+                                    newActiveProperties |= TransitionProperty.Height;
+                                }
+                            }
+                            if ((properties & TransitionProperty.BackgroundColor) != 0)
+                            {
+                                if (!__ColorEqual(oldTargetState.BackgroundColor, targetState.BackgroundColor))
+                                {
+                                    newActiveProperties |= TransitionProperty.BackgroundColor;
+                                }
+                            }
+                            if ((properties & TransitionProperty.OverlayColor) != 0)
+                            {
+                                if (!__ColorEqual(oldTargetState.OverlayColor, targetState.OverlayColor))
+                                {
+                                    newActiveProperties |= TransitionProperty.OverlayColor;
+                                }
+                            }
+                            if ((properties & TransitionProperty.BorderColor) != 0)
+                            {
+                                if (!__ColorEqual(oldTargetState.BorderColor, targetState.BorderColor))
+                                {
+                                    newActiveProperties |= TransitionProperty.BorderColor;
+                                }
+                            }
+                            if ((properties & TransitionProperty.BorderWidth) != 0)
+                            {
+                                if (!__BorderWidthEqual(oldTargetState.BorderWidth, targetState.BorderWidth))
+                                {
+                                    newActiveProperties |= TransitionProperty.BorderWidth;
+                                }
+                            }
+
+                            if (newActiveProperties != 0)
+                            {
+                                transitionData.ElapsedTime = 0;
+                                transitionData.InitialState = transitionData.CurrentState;
+                                transitionData.State = TransitionState.Transitioning;
+                                transitionData.ActiveProperties |= newActiveProperties;
+                            }
+                        }
+
+                        if (transitionData.State == TransitionState.Idle)
+                        {
+                            transitionData.InitialState = targetState;
+                            transitionData.CurrentState = targetState;
+                            transitionData.TargetState = targetState;
+                            transitionData.ActiveProperties = TransitionProperty.None;
+                        }
+                        else
+                        {
+                            bool transitionComplete = currentElement.Config.Transition.Handler!(new TransitionCallbackArguments
+                            {
+                                TransitionState = transitionData.State,
+                                Initial = transitionData.InitialState,
+                                Current = ref transitionData.CurrentState,
+                                Target = targetState,
+                                ElapsedTime = transitionData.ElapsedTime,
+                                Duration = currentElement.Config.Transition.Duration,
+                                Properties = transitionData.ActiveProperties,
+                            });
+                            __ApplyTransitionedPropertiesToElement(currentElement, transitionData.ActiveProperties, transitionData.CurrentState, ref mapItem.BoundingBox, transitionData.Reparented);
+                            transitionData.ElapsedTime += deltaTime;
+
+                            if (transitionComplete)
+                            {
+                                if (transitionData.State == TransitionState.Entering || transitionData.State == TransitionState.Transitioning)
+                                {
+                                    transitionData.State = TransitionState.Idle;
+                                    transitionData.ElapsedTime = 0;
+                                    transitionData.Reparented = false;
+                                    transitionData.ActiveProperties = TransitionProperty.None;
+                                }
+                                else if (transitionData.State == TransitionState.Exiting)
+                                {
+                                    context.TransitionDatas.RemoveSwapback(i);
+                                    i--;
+                                }
+                            }
                         }
                     }
                 }
-            }
 
-            // Remove nested transitions.
-            for (int i = 0; i < elementIdsToRemoveTransitions.length; ++i)
-            {
-                for (int j = 0; j < context.transitionDatas.length; ++j)
+                if (context.DebugModeEnabled)
                 {
-                    if (context.transitionDatas.internalArray[j].elementId == (uint)elementIdsToRemoveTransitions.internalArray[i])
-                    {
-                        context.transitionDatas.RemoveSwapback(j);
-                        break;
-                    }
+                    context.WarningsEnabled = false;
+                    __RenderDebugView();
+                    context.WarningsEnabled = true;
                 }
-            }
 
-            if (context.booleanWarnings.maxElementsExceeded)
-            {
-                const string message = "Clay Error: Layout elements exceeded Clay__maxElementCount";
-                __AddRenderCommand(new Clay_RenderCommand
+                if (context.BooleanWarnings.MaxElementsExceeded)
                 {
-                    boundingBox = new Clay_BoundingBox(context.layoutDimensions.width / 2 - 59 * 4, context.layoutDimensions.height / 2, 0, 0),
-                    renderData = new Clay_RenderData
-                    {
-                        text = new Clay_TextRenderData
-                        {
-                            stringContents = new StringSegment(message),
-                            textColor = new Clay_Color(255, 0, 0, 255),
-                            fontSize = 16,
-                        },
-                    },
-                    commandType = Clay_RenderCommandType.CLAY_RENDER_COMMAND_TYPE_TEXT,
-                });
+                    __AddDebugViewElementsExceededError();
+                }
+                else
+                {
+                    __CalculateFinalLayout(deltaTime, true, true);
+                }
+                // Note: C calls _CloneElementsWithExitTransition() here to persist exiting subtrees in reused
+                // arena memory. In C#, object references already keep `elementThisFrame` alive across frames.
             }
             else
             {
-                if (context.transitionDatas.length > 0)
+                if (context.DebugModeEnabled)
                 {
-                    __CalculateFinalLayout(deltaTime, false, false);
+                    context.WarningsEnabled = false;
+                    __RenderDebugView();
+                    context.WarningsEnabled = true;
+                }
 
-                    for (int i = 0; i < context.transitionDatas.length; ++i)
-                    {
-                        ref Clay__TransitionDataInternal transitionData = ref context.transitionDatas.internalArray[i];
-                        Clay_LayoutElement currentElement = transitionData.elementThisFrame;
-                        ref Clay_LayoutElementHashMapItem mapItem = ref __GetHashMapItem(transitionData.elementId);
-                        if (Unsafe.IsNullRef(in mapItem)) continue;
-                        ref Clay_LayoutElementHashMapItem parentMapItem = ref __GetHashMapItem(transitionData.parentId);
-
-                        Clay_TransitionData targetState = transitionData.targetState;
-                        if (transitionData.state != Clay_TransitionState.CLAY_TRANSITION_STATE_EXITING)
-                        {
-                            targetState = new Clay_TransitionData
-                            {
-                                boundingBox = mapItem.boundingBox,
-                                backgroundColor = currentElement.config.backgroundColor,
-                                overlayColor = currentElement.config.overlayColor,
-                                borderColor = currentElement.config.border.color,
-                                borderWidth = currentElement.config.border.width,
-                            };
-                        }
-                        Clay_TransitionData oldTargetState = transitionData.targetState;
-                        transitionData.targetState = targetState;
-
-                        if (mapItem.appearedThisFrame)
-                        {
-                            if (currentElement.config.transition.enter.setInitialState != null
-                                && !(!Unsafe.IsNullRef(in parentMapItem) && parentMapItem.appearedThisFrame && currentElement.config.transition.enter.trigger == Clay_TransitionEnterTriggerType.CLAY_TRANSITION_ENTER_SKIP_ON_FIRST_PARENT_FRAME))
-                            {
-                                transitionData.state = Clay_TransitionState.CLAY_TRANSITION_STATE_ENTERING;
-                                transitionData.initialState = currentElement.config.transition.enter.setInitialState(transitionData.targetState, currentElement.config.transition.properties);
-                                transitionData.currentState = transitionData.initialState;
-                                transitionData.activeProperties = currentElement.config.transition.properties;
-                                __ApplyTransitionedPropertiesToElement(currentElement, currentElement.config.transition.properties, transitionData.initialState, ref mapItem.boundingBox, transitionData.reparented);
-                            }
-                            else
-                            {
-                                transitionData.initialState = targetState;
-                                transitionData.currentState = targetState;
-                                transitionData.activeProperties = Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_NONE;
-                            }
-                        }
-                        else
-                        {
-                            if (transitionData.state != Clay_TransitionState.CLAY_TRANSITION_STATE_EXITING)
-                            {
-                                Vector2 parentScrollOffset = !Unsafe.IsNullRef(in parentMapItem) ? parentMapItem.layoutElement.config.clip.childOffset : default;
-                                Vector2 newRelativePosition = new Vector2(
-                                    mapItem.boundingBox.x - (!Unsafe.IsNullRef(in parentMapItem) ? parentMapItem.boundingBox.x : 0) - parentScrollOffset.X,
-                                    mapItem.boundingBox.y - (!Unsafe.IsNullRef(in parentMapItem) ? parentMapItem.boundingBox.y : 0) - parentScrollOffset.Y);
-                                Vector2 oldRelativePosition = transitionData.oldParentRelativePosition;
-                                transitionData.oldParentRelativePosition = newRelativePosition;
-
-                                Clay_TransitionProperty properties = currentElement.config.transition.properties;
-                                Clay_TransitionProperty newActiveProperties = Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_NONE;
-                                if ((properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_X) != 0)
-                                {
-                                    if (!__FloatEqual(oldTargetState.boundingBox.x, targetState.boundingBox.x)
-                                        && (!__FloatEqual(oldRelativePosition.X, newRelativePosition.X) || transitionData.reparented)
-                                        && !context.rootResizedLastFrame)
-                                    {
-                                        newActiveProperties |= Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_X;
-                                    }
-                                }
-                                if ((properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_Y) != 0)
-                                {
-                                    if (!__FloatEqual(oldTargetState.boundingBox.y, targetState.boundingBox.y)
-                                        && (!__FloatEqual(oldRelativePosition.Y, newRelativePosition.Y) || transitionData.reparented)
-                                        && !context.rootResizedLastFrame)
-                                    {
-                                        newActiveProperties |= Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_Y;
-                                    }
-                                }
-                                if ((properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_WIDTH) != 0)
-                                {
-                                    if (!__FloatEqual(oldTargetState.boundingBox.width, targetState.boundingBox.width) && !context.rootResizedLastFrame)
-                                    {
-                                        newActiveProperties |= Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_WIDTH;
-                                    }
-                                }
-                                if ((properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_HEIGHT) != 0)
-                                {
-                                    if (!__FloatEqual(oldTargetState.boundingBox.height, targetState.boundingBox.height) && !context.rootResizedLastFrame)
-                                    {
-                                        newActiveProperties |= Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_HEIGHT;
-                                    }
-                                }
-                                if ((properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_BACKGROUND_COLOR) != 0)
-                                {
-                                    if (!__ColorEqual(oldTargetState.backgroundColor, targetState.backgroundColor))
-                                    {
-                                        newActiveProperties |= Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_BACKGROUND_COLOR;
-                                    }
-                                }
-                                if ((properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_OVERLAY_COLOR) != 0)
-                                {
-                                    if (!__ColorEqual(oldTargetState.overlayColor, targetState.overlayColor))
-                                    {
-                                        newActiveProperties |= Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_OVERLAY_COLOR;
-                                    }
-                                }
-                                if ((properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_BORDER_COLOR) != 0)
-                                {
-                                    if (!__ColorEqual(oldTargetState.borderColor, targetState.borderColor))
-                                    {
-                                        newActiveProperties |= Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_BORDER_COLOR;
-                                    }
-                                }
-                                if ((properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_BORDER_WIDTH) != 0)
-                                {
-                                    if (!__BorderWidthEqual(oldTargetState.borderWidth, targetState.borderWidth))
-                                    {
-                                        newActiveProperties |= Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_BORDER_WIDTH;
-                                    }
-                                }
-
-                                if (newActiveProperties != 0)
-                                {
-                                    transitionData.elapsedTime = 0;
-                                    transitionData.initialState = transitionData.currentState;
-                                    transitionData.state = Clay_TransitionState.CLAY_TRANSITION_STATE_TRANSITIONING;
-                                    transitionData.activeProperties |= newActiveProperties;
-                                }
-                            }
-
-                            if (transitionData.state == Clay_TransitionState.CLAY_TRANSITION_STATE_IDLE)
-                            {
-                                transitionData.initialState = targetState;
-                                transitionData.currentState = targetState;
-                                transitionData.targetState = targetState;
-                                transitionData.activeProperties = Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_NONE;
-                            }
-                            else
-                            {
-                                bool transitionComplete = currentElement.config.transition.handler!(new Clay_TransitionCallbackArguments
-                                {
-                                    transitionState = transitionData.state,
-                                    initial = transitionData.initialState,
-                                    current = ref transitionData.currentState,
-                                    target = targetState,
-                                    elapsedTime = transitionData.elapsedTime,
-                                    duration = currentElement.config.transition.duration,
-                                    properties = transitionData.activeProperties,
-                                });
-                                __ApplyTransitionedPropertiesToElement(currentElement, transitionData.activeProperties, transitionData.currentState, ref mapItem.boundingBox, transitionData.reparented);
-                                transitionData.elapsedTime += deltaTime;
-
-                                if (transitionComplete)
-                                {
-                                    if (transitionData.state == Clay_TransitionState.CLAY_TRANSITION_STATE_ENTERING || transitionData.state == Clay_TransitionState.CLAY_TRANSITION_STATE_TRANSITIONING)
-                                    {
-                                        transitionData.state = Clay_TransitionState.CLAY_TRANSITION_STATE_IDLE;
-                                        transitionData.elapsedTime = 0;
-                                        transitionData.reparented = false;
-                                        transitionData.activeProperties = Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_NONE;
-                                    }
-                                    else if (transitionData.state == Clay_TransitionState.CLAY_TRANSITION_STATE_EXITING)
-                                    {
-                                        context.transitionDatas.RemoveSwapback(i);
-                                        i--;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (context.debugModeEnabled)
-                    {
-                        context.warningsEnabled = false;
-                        __RenderDebugView();
-                        context.warningsEnabled = true;
-                    }
-
-                    if (context.booleanWarnings.maxElementsExceeded)
-                    {
-                        __AddDebugViewElementsExceededError();
-                    }
-                    else
-                    {
-                        __CalculateFinalLayout(deltaTime, true, true);
-                    }
-                    // Note: C calls Clay__CloneElementsWithExitTransition() here to persist exiting subtrees in reused
-                    // arena memory. In C#, object references already keep `elementThisFrame` alive across frames.
+                if (context.BooleanWarnings.MaxElementsExceeded)
+                {
+                    __AddDebugViewElementsExceededError();
                 }
                 else
                 {
-                    if (context.debugModeEnabled)
-                    {
-                        context.warningsEnabled = false;
-                        __RenderDebugView();
-                        context.warningsEnabled = true;
-                    }
-
-                    if (context.booleanWarnings.maxElementsExceeded)
-                    {
-                        __AddDebugViewElementsExceededError();
-                    }
-                    else
-                    {
-                        __CalculateFinalLayout(deltaTime, false, true);
-                    }
+                    __CalculateFinalLayout(deltaTime, false, true);
                 }
             }
+        }
 
-            // Hash map GC — evict items not seen this frame.
-            for (int i = 0; i < context.layoutElementsHashMap.capacity; ++i)
+        // Hash map GC — evict items not seen this frame.
+        for (int i = 0; i < context.LayoutElementsHashMap.Capacity; ++i)
+        {
+            int currentElementIndex = context.LayoutElementsHashMap.InternalArray[i];
+            int previousElementIndex = -1;
+            while (currentElementIndex != -1)
             {
-                int currentElementIndex = context.layoutElementsHashMap.internalArray[i];
-                int previousElementIndex = -1;
-                while (currentElementIndex != -1)
+                LayoutElementHashMapItem currentItem = context.LayoutElementsHashMapInternal.InternalArray[currentElementIndex];
+                int nextIndex = currentItem.NextIndex;
+                if (currentItem.Generation <= context.Generation)
                 {
-                    Clay_LayoutElementHashMapItem currentItem = context.layoutElementsHashMapInternal.internalArray[currentElementIndex];
-                    int nextIndex = currentItem.nextIndex;
-                    if (currentItem.generation <= context.generation)
+                    // Delete the underlying item and add it to the freelist.
+                    context.LayoutElementsHashMapInternal.InternalArray[currentElementIndex] = new LayoutElementHashMapItem { NextIndex = -1 };
+                    context.LayoutElementsHashMapFreeList.Add(currentElementIndex);
+                    if (previousElementIndex == -1)
                     {
-                        // Delete the underlying item and add it to the freelist.
-                        context.layoutElementsHashMapInternal.internalArray[currentElementIndex] = new Clay_LayoutElementHashMapItem { nextIndex = -1 };
-                        context.layoutElementsHashMapFreeList.Add(currentElementIndex);
-                        if (previousElementIndex == -1)
-                        {
-                            context.layoutElementsHashMap.internalArray[i] = nextIndex;
-                            currentElementIndex = nextIndex;
-                            previousElementIndex = -1;
-                        }
-                        else
-                        {
-                            Clay_LayoutElementHashMapItem previousItem = context.layoutElementsHashMapInternal.internalArray[previousElementIndex];
-                            previousItem.nextIndex = nextIndex;
-                            context.layoutElementsHashMapInternal.internalArray[previousElementIndex] = previousItem;
-                            currentElementIndex = nextIndex;
-                        }
+                        context.LayoutElementsHashMap.InternalArray[i] = nextIndex;
+                        currentElementIndex = nextIndex;
+                        previousElementIndex = -1;
                     }
                     else
                     {
-                        previousElementIndex = currentElementIndex;
+                        LayoutElementHashMapItem previousItem = context.LayoutElementsHashMapInternal.InternalArray[previousElementIndex];
+                        previousItem.NextIndex = nextIndex;
+                        context.LayoutElementsHashMapInternal.InternalArray[previousElementIndex] = previousItem;
                         currentElementIndex = nextIndex;
                     }
                 }
-            }
-
-            return new Clay_RenderCommandArray(context.renderCommands);
-        }
-
-        public static uint GetOpenElementId() => __GetOpenLayoutElement().id;
-
-        public static Clay_ElementId GetElementId(string idString) => __HashString(idString, 0);
-
-        public static Clay_ElementId GetElementIdWithIndex(string idString, uint index) => __HashStringWithOffset(idString, index, 0);
-
-        public static bool Hovered()
-        {
-            var context = GetCurrentContext()!;
-            if (context.booleanWarnings.maxElementsExceeded) return false;
-            Clay_LayoutElement openLayoutElement = __GetOpenLayoutElement();
-            for (int i = 0; i < context.pointerOverIds.length; ++i)
-            {
-                if (context.pointerOverIds.internalArray[i].id == openLayoutElement.id) return true;
-            }
-            return false;
-        }
-
-        public static void OnHover(Clay_OnHoverFunction onHoverFunction, object? userData)
-        {
-            var context = GetCurrentContext()!;
-            if (context.booleanWarnings.maxElementsExceeded) return;
-            Clay_LayoutElement openLayoutElement = __GetOpenLayoutElement();
-            ref Clay_LayoutElementHashMapItem hashMapItem = ref __GetHashMapItem(openLayoutElement.id);
-            if (!Unsafe.IsNullRef(in hashMapItem))
-            {
-                hashMapItem.onHoverFunction = onHoverFunction;
-                hashMapItem.hoverFunctionUserData = userData;
-            }
-        }
-
-        public static bool PointerOver(Clay_ElementId elementId) // TODO return priority for separating multiple results.
-        {
-            var context = GetCurrentContext()!;
-            for (int i = 0; i < context.pointerOverIds.length; ++i)
-            {
-                if (context.pointerOverIds.internalArray[i].id == elementId.id) return true;
-            }
-            return false;
-        }
-
-        public static Clay_ElementIdArray GetPointerOverIds() => new Clay_ElementIdArray(GetCurrentContext()!.pointerOverIds);
-
-        public static Clay_ScrollContainerData GetScrollContainerData(Clay_ElementId id)
-        {
-            var context = GetCurrentContext()!;
-            for (int i = 0; i < context.scrollContainerDatas.length; ++i)
-            {
-                ref Clay__ScrollContainerDataInternal scrollContainerData = ref context.scrollContainerDatas.internalArray[i];
-                if (scrollContainerData.elementId == id.id)
+                else
                 {
-                    if (scrollContainerData.layoutElement == null)
-                    {
-                        // This can happen on the first frame before a scroll container is declared.
-                        return default;
-                    }
-                    return Clay_ScrollContainerData.Create(ref scrollContainerData);
+                    previousElementIndex = currentElementIndex;
+                    currentElementIndex = nextIndex;
                 }
             }
-            return default;
         }
 
-        public static Clay_ElementData GetElementData(Clay_ElementId id)
-        {
-            ref Clay_LayoutElementHashMapItem item = ref __GetHashMapItem(id.id);
-            if (Unsafe.IsNullRef(in item)) return default;
-            return new Clay_ElementData { boundingBox = item.boundingBox, found = true };
-        }
-
-        public static void SetDebugModeEnabled(bool enabled) => GetCurrentContext()!.debugModeEnabled = enabled;
-        public static bool IsDebugModeEnabled() => GetCurrentContext()!.debugModeEnabled;
-
-        public static void SetCullingEnabled(bool enabled) => GetCurrentContext()!.disableCulling = !enabled;
-
-        public static void SetExternalScrollHandlingEnabled(bool enabled) => GetCurrentContext()!.externalScrollHandlingEnabled = enabled;
-
-        public static int GetMaxElementCount() => GetCurrentContext()!.maxElementCount;
-
-        public static void SetMaxElementCount(int maxElementCount)
-        {
-            var context = GetCurrentContext();
-            if (context != null)
-            {
-                context.maxElementCount = maxElementCount;
-            }
-            else
-            {
-                s_defaultMaxElementCount = maxElementCount;
-                s_defaultMaxMeasureTextWordCacheCount = maxElementCount * 2;
-            }
-        }
-
-        public static int GetMaxMeasureTextCacheWordCount() => GetCurrentContext()!.maxMeasureTextCacheWordCount;
-
-        public static void SetMaxMeasureTextCacheWordCount(int maxMeasureTextCacheWordCount)
-        {
-            var context = GetCurrentContext();
-            if (context != null)
-            {
-                context.maxMeasureTextCacheWordCount = maxMeasureTextCacheWordCount;
-            }
-            else
-            {
-                s_defaultMaxMeasureTextWordCacheCount = maxMeasureTextCacheWordCount;
-            }
-        }
-
-        public static void ResetMeasureTextCache()
-        {
-            var context = GetCurrentContext()!;
-            context.measureTextHashMapInternal.length = 0;
-            context.measureTextHashMapInternalFreeList.length = 0;
-            context.measureTextHashMap.length = 0;
-            context.measuredWords.length = 0;
-            context.measuredWordsFreeList.length = 0;
-
-            for (int i = 0; i < context.measureTextHashMap.capacity; ++i)
-            {
-                context.measureTextHashMap.internalArray[i] = 0;
-            }
-            context.measureTextHashMapInternal.length = 1; // Reserve the 0 value to mean "no next element".
-        }
-
-        public static bool EaseOut(Clay_TransitionCallbackArguments arguments)
-        {
-            float ratio = 1;
-            if (arguments.duration > 0)
-            {
-                ratio = MathF.Min(arguments.elapsedTime / arguments.duration, 1);
-            }
-            float inverse = 1f - ratio;
-            float lerpAmount = 1f - (inverse * inverse * inverse);
-
-            if ((arguments.properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_X) != 0)
-            {
-                arguments.current.boundingBox.x = Lerp(arguments.initial.boundingBox.x, arguments.target.boundingBox.x, lerpAmount);
-            }
-            if ((arguments.properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_Y) != 0)
-            {
-                arguments.current.boundingBox.y = Lerp(arguments.initial.boundingBox.y, arguments.target.boundingBox.y, lerpAmount);
-            }
-            if ((arguments.properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_WIDTH) != 0)
-            {
-                arguments.current.boundingBox.width = Lerp(arguments.initial.boundingBox.width, arguments.target.boundingBox.width, lerpAmount);
-            }
-            if ((arguments.properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_HEIGHT) != 0)
-            {
-                arguments.current.boundingBox.height = Lerp(arguments.initial.boundingBox.height, arguments.target.boundingBox.height, lerpAmount);
-            }
-            if ((arguments.properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_BACKGROUND_COLOR) != 0)
-            {
-                arguments.current.backgroundColor = new Clay_Color(
-                    Lerp(arguments.initial.backgroundColor.r, arguments.target.backgroundColor.r, lerpAmount),
-                    Lerp(arguments.initial.backgroundColor.g, arguments.target.backgroundColor.g, lerpAmount),
-                    Lerp(arguments.initial.backgroundColor.b, arguments.target.backgroundColor.b, lerpAmount),
-                    Lerp(arguments.initial.backgroundColor.a, arguments.target.backgroundColor.a, lerpAmount));
-            }
-            if ((arguments.properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_OVERLAY_COLOR) != 0)
-            {
-                arguments.current.overlayColor = new Clay_Color(
-                    Lerp(arguments.initial.overlayColor.r, arguments.target.overlayColor.r, lerpAmount),
-                    Lerp(arguments.initial.overlayColor.g, arguments.target.overlayColor.g, lerpAmount),
-                    Lerp(arguments.initial.overlayColor.b, arguments.target.overlayColor.b, lerpAmount),
-                    Lerp(arguments.initial.overlayColor.a, arguments.target.overlayColor.a, lerpAmount));
-            }
-            if ((arguments.properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_BORDER_COLOR) != 0)
-            {
-                arguments.current.borderColor = new Clay_Color(
-                    Lerp(arguments.initial.borderColor.r, arguments.target.borderColor.r, lerpAmount),
-                    Lerp(arguments.initial.borderColor.g, arguments.target.borderColor.g, lerpAmount),
-                    Lerp(arguments.initial.borderColor.b, arguments.target.borderColor.b, lerpAmount),
-                    Lerp(arguments.initial.borderColor.a, arguments.target.borderColor.a, lerpAmount));
-            }
-            if ((arguments.properties & Clay_TransitionProperty.CLAY_TRANSITION_PROPERTY_BORDER_WIDTH) != 0)
-            {
-                arguments.current.borderWidth = new Clay_BorderWidth
-                {
-                    left = (ushort)Lerp(arguments.initial.borderWidth.left, arguments.target.borderWidth.left, lerpAmount),
-                    right = (ushort)Lerp(arguments.initial.borderWidth.right, arguments.target.borderWidth.right, lerpAmount),
-                    top = (ushort)Lerp(arguments.initial.borderWidth.top, arguments.target.borderWidth.top, lerpAmount),
-                    bottom = (ushort)Lerp(arguments.initial.borderWidth.bottom, arguments.target.borderWidth.bottom, lerpAmount),
-                    betweenChildren = (ushort)Lerp(arguments.initial.borderWidth.betweenChildren, arguments.target.borderWidth.betweenChildren, lerpAmount),
-                };
-            }
-            return ratio >= 1;
-        }
-
-        // -------------------------------------
-        // DSL (replaces the C macros) ---------
-        // -------------------------------------
-
-        public sealed class ElementScope : IDisposable
-        {
-            void IDisposable.Dispose() => __CloseElement();
-            
-            public void Close() => __CloseElement();
-        }
-
-        private static readonly ElementScope s_elementScope = new ElementScope();
-
-        // CLAY(id, ...) { ... }  →  using (Clay.Element(id, decl)) { ... }
-        public static ElementScope Element(Clay_ElementId id, Clay_ElementDeclaration declaration)
-        {
-            __OpenElementWithId(id);
-            __ConfigureOpenElement(declaration);
-            return s_elementScope;
-        }
-
-        // Overload that evaluates the declaration _after_ the element is opened, so expressions like
-        // Clay.Hovered() or Clay.GetScrollOffset() inside the declaration observe the newly opened element
-        // (matching the C macro's evaluation order).
-        public static ElementScope Element(Clay_ElementId id, Func<Clay_ElementDeclaration> declaration)
-        {
-            __OpenElementWithId(id);
-            __ConfigureOpenElement(declaration());
-            return s_elementScope;
-        }
-
-        // CLAY_AUTO_ID(...) { ... }  →  using (Clay.AutoId(decl)) { ... }
-        public static ElementScope AutoId(Clay_ElementDeclaration declaration) => AutoId(() => declaration);
-
-        public static ElementScope AutoId(Func<Clay_ElementDeclaration> declaration)
-        {
-            __OpenElement();
-            __ConfigureOpenElement(declaration());
-            return s_elementScope;
-        }
-
-        // CLAY_TEXT(text, ...)  →  Clay.Text(text, config)
-        public static void Text(string text, Clay_TextElementConfig textConfig) => __OpenTextElement(text, textConfig);
-
-        // ID helpers (CLAY_ID / CLAY_SID / CLAY_IDI / CLAY_SIDI / CLAY_ID_LOCAL / ...)
-        public static Clay_ElementId Id(string label) => __HashString(label, 0);
-        public static Clay_ElementId SId(string label) => __HashString(label, 0);
-        public static Clay_ElementId Idi(string label, uint index) => __HashStringWithOffset(label, index, 0);
-        public static Clay_ElementId SIdi(string label, uint index) => __HashStringWithOffset(label, index, 0);
-        public static Clay_ElementId IdLocal(string label) => __HashString(label, GetOpenElementId());
-        public static Clay_ElementId SIdLocal(string label) => __HashString(label, GetOpenElementId());
-        public static Clay_ElementId IdiLocal(string label, uint index) => __HashStringWithOffset(label, index, GetOpenElementId());
-        public static Clay_ElementId SIdiLocal(string label, uint index) => __HashStringWithOffset(label, index, GetOpenElementId());
-
-        // Sizing / padding / corner / border helpers (CLAY_SIZING_* / CLAY_PADDING_ALL / ...).
-        public static Clay_SizingAxis SizingFixed(float fixedSize) => new Clay_SizingAxis
-        {
-            minMax = new Clay_SizingMinMax { min = fixedSize, max = fixedSize },
-            type = Clay__SizingType.CLAY__SIZING_TYPE_FIXED,
-        };
-
-        public static Clay_SizingAxis SizingGrow() => new Clay_SizingAxis { minMax = default, type = Clay__SizingType.CLAY__SIZING_TYPE_GROW };
-        public static Clay_SizingAxis SizingGrow(float min) => new Clay_SizingAxis { minMax = new Clay_SizingMinMax { min = min, max = 0 }, type = Clay__SizingType.CLAY__SIZING_TYPE_GROW };
-        public static Clay_SizingAxis SizingGrow(float min, float max) => new Clay_SizingAxis { minMax = new Clay_SizingMinMax { min = min, max = max }, type = Clay__SizingType.CLAY__SIZING_TYPE_GROW };
-
-        public static Clay_SizingAxis SizingFit() => new Clay_SizingAxis { minMax = default, type = Clay__SizingType.CLAY__SIZING_TYPE_FIT };
-        public static Clay_SizingAxis SizingFit(float min) => new Clay_SizingAxis { minMax = new Clay_SizingMinMax { min = min, max = 0 }, type = Clay__SizingType.CLAY__SIZING_TYPE_FIT };
-        public static Clay_SizingAxis SizingFit(float min, float max) => new Clay_SizingAxis { minMax = new Clay_SizingMinMax { min = min, max = max }, type = Clay__SizingType.CLAY__SIZING_TYPE_FIT };
-
-        public static Clay_SizingAxis SizingPercent(float percentOfParent) => new Clay_SizingAxis { percent = percentOfParent, type = Clay__SizingType.CLAY__SIZING_TYPE_PERCENT };
-
-        public static Clay_Padding PaddingAll(ushort padding) => new Clay_Padding { left = padding, right = padding, top = padding, bottom = padding };
-        public static Clay_CornerRadius CornerRadius(float radius) => new Clay_CornerRadius { topLeft = radius, topRight = radius, bottomLeft = radius, bottomRight = radius };
-        public static Clay_BorderWidth BorderAll(ushort widthValue) => new Clay_BorderWidth { left = widthValue, right = widthValue, top = widthValue, bottom = widthValue, betweenChildren = widthValue };
-        public static Clay_BorderWidth BorderOutside(ushort widthValue) => new Clay_BorderWidth { left = widthValue, right = widthValue, top = widthValue, bottom = widthValue, betweenChildren = 0 };
+        return new RenderCommandArray(context.RenderCommands);
     }
+
+    public static uint GetOpenElementId() => __GetOpenLayoutElement().Id;
+
+    public static ElementId GetElementId(string idString) => __HashString(idString, 0);
+
+    public static ElementId GetElementIdWithIndex(string idString, uint index) => __HashStringWithOffset(idString, index, 0);
+
+    public static bool Hovered()
+    {
+        var context = GetCurrentContext()!;
+        if (context.BooleanWarnings.MaxElementsExceeded) return false;
+        LayoutElement openLayoutElement = __GetOpenLayoutElement();
+        for (int i = 0; i < context.PointerOverIds.Length; ++i)
+        {
+            if (context.PointerOverIds.InternalArray[i].Id == openLayoutElement.Id) return true;
+        }
+        return false;
+    }
+
+    public static void OnHover(OnHoverFunction onHoverFunction, object? userData)
+    {
+        var context = GetCurrentContext()!;
+        if (context.BooleanWarnings.MaxElementsExceeded) return;
+        LayoutElement openLayoutElement = __GetOpenLayoutElement();
+        ref LayoutElementHashMapItem hashMapItem = ref __GetHashMapItem(openLayoutElement.Id);
+        if (!Unsafe.IsNullRef(in hashMapItem))
+        {
+            hashMapItem.OnHoverFunction = onHoverFunction;
+            hashMapItem.HoverFunctionUserData = userData;
+        }
+    }
+
+    public static bool PointerOver(ElementId elementId) // TODO return priority for separating multiple results.
+    {
+        var context = GetCurrentContext()!;
+        for (int i = 0; i < context.PointerOverIds.Length; ++i)
+        {
+            if (context.PointerOverIds.InternalArray[i].Id == elementId.Id) return true;
+        }
+        return false;
+    }
+
+    public static ElementIdArray GetPointerOverIds() => new ElementIdArray(GetCurrentContext()!.PointerOverIds);
+
+    public static ScrollContainerData GetScrollContainerData(ElementId id)
+    {
+        var context = GetCurrentContext()!;
+        for (int i = 0; i < context.ScrollContainerDatas.Length; ++i)
+        {
+            ref ScrollContainerDataInternal scrollContainerData = ref context.ScrollContainerDatas.InternalArray[i];
+            if (scrollContainerData.ElementId == id.Id)
+            {
+                if (scrollContainerData.LayoutElement == null)
+                {
+                    // This can happen on the first frame before a scroll container is declared.
+                    return default;
+                }
+                return ScrollContainerData.Create(ref scrollContainerData);
+            }
+        }
+        return default;
+    }
+
+    public static ElementData GetElementData(ElementId id)
+    {
+        ref LayoutElementHashMapItem item = ref __GetHashMapItem(id.Id);
+        if (Unsafe.IsNullRef(in item)) return default;
+        return new ElementData { BoundingBox = item.BoundingBox, Found = true };
+    }
+
+    public static void SetDebugModeEnabled(bool enabled) => GetCurrentContext()!.DebugModeEnabled = enabled;
+    public static bool IsDebugModeEnabled() => GetCurrentContext()!.DebugModeEnabled;
+
+    public static void SetCullingEnabled(bool enabled) => GetCurrentContext()!.DisableCulling = !enabled;
+
+    public static void SetExternalScrollHandlingEnabled(bool enabled) => GetCurrentContext()!.ExternalScrollHandlingEnabled = enabled;
+
+    public static int GetMaxElementCount() => GetCurrentContext()!.MaxElementCount;
+
+    public static void SetMaxElementCount(int maxElementCount)
+    {
+        var context = GetCurrentContext();
+        if (context != null)
+        {
+            context.MaxElementCount = maxElementCount;
+        }
+        else
+        {
+            SDefaultMaxElementCount = maxElementCount;
+            SDefaultMaxMeasureTextWordCacheCount = maxElementCount * 2;
+        }
+    }
+
+    public static int GetMaxMeasureTextCacheWordCount() => GetCurrentContext()!.MaxMeasureTextCacheWordCount;
+
+    public static void SetMaxMeasureTextCacheWordCount(int maxMeasureTextCacheWordCount)
+    {
+        var context = GetCurrentContext();
+        if (context != null)
+        {
+            context.MaxMeasureTextCacheWordCount = maxMeasureTextCacheWordCount;
+        }
+        else
+        {
+            SDefaultMaxMeasureTextWordCacheCount = maxMeasureTextCacheWordCount;
+        }
+    }
+
+    public static void ResetMeasureTextCache()
+    {
+        var context = GetCurrentContext()!;
+        context.MeasureTextHashMapInternal.Length = 0;
+        context.MeasureTextHashMapInternalFreeList.Length = 0;
+        context.MeasureTextHashMap.Length = 0;
+        context.MeasuredWords.Length = 0;
+        context.MeasuredWordsFreeList.Length = 0;
+
+        for (int i = 0; i < context.MeasureTextHashMap.Capacity; ++i)
+        {
+            context.MeasureTextHashMap.InternalArray[i] = 0;
+        }
+        context.MeasureTextHashMapInternal.Length = 1; // Reserve the 0 value to mean "no next element".
+    }
+
+    public static bool EaseOut(TransitionCallbackArguments arguments)
+    {
+        float ratio = 1;
+        if (arguments.Duration > 0)
+        {
+            ratio = MathF.Min(arguments.ElapsedTime / arguments.Duration, 1);
+        }
+        float inverse = 1f - ratio;
+        float lerpAmount = 1f - (inverse * inverse * inverse);
+
+        if ((arguments.Properties & TransitionProperty.X) != 0)
+        {
+            arguments.Current.BoundingBox.X = Lerp(arguments.Initial.BoundingBox.X, arguments.Target.BoundingBox.X, lerpAmount);
+        }
+        if ((arguments.Properties & TransitionProperty.Y) != 0)
+        {
+            arguments.Current.BoundingBox.Y = Lerp(arguments.Initial.BoundingBox.Y, arguments.Target.BoundingBox.Y, lerpAmount);
+        }
+        if ((arguments.Properties & TransitionProperty.Width) != 0)
+        {
+            arguments.Current.BoundingBox.Width = Lerp(arguments.Initial.BoundingBox.Width, arguments.Target.BoundingBox.Width, lerpAmount);
+        }
+        if ((arguments.Properties & TransitionProperty.Height) != 0)
+        {
+            arguments.Current.BoundingBox.Height = Lerp(arguments.Initial.BoundingBox.Height, arguments.Target.BoundingBox.Height, lerpAmount);
+        }
+        if ((arguments.Properties & TransitionProperty.BackgroundColor) != 0)
+        {
+            arguments.Current.BackgroundColor = new Color(
+                Lerp(arguments.Initial.BackgroundColor.R, arguments.Target.BackgroundColor.R, lerpAmount),
+                Lerp(arguments.Initial.BackgroundColor.G, arguments.Target.BackgroundColor.G, lerpAmount),
+                Lerp(arguments.Initial.BackgroundColor.B, arguments.Target.BackgroundColor.B, lerpAmount),
+                Lerp(arguments.Initial.BackgroundColor.A, arguments.Target.BackgroundColor.A, lerpAmount));
+        }
+        if ((arguments.Properties & TransitionProperty.OverlayColor) != 0)
+        {
+            arguments.Current.OverlayColor = new Color(
+                Lerp(arguments.Initial.OverlayColor.R, arguments.Target.OverlayColor.R, lerpAmount),
+                Lerp(arguments.Initial.OverlayColor.G, arguments.Target.OverlayColor.G, lerpAmount),
+                Lerp(arguments.Initial.OverlayColor.B, arguments.Target.OverlayColor.B, lerpAmount),
+                Lerp(arguments.Initial.OverlayColor.A, arguments.Target.OverlayColor.A, lerpAmount));
+        }
+        if ((arguments.Properties & TransitionProperty.BorderColor) != 0)
+        {
+            arguments.Current.BorderColor = new Color(
+                Lerp(arguments.Initial.BorderColor.R, arguments.Target.BorderColor.R, lerpAmount),
+                Lerp(arguments.Initial.BorderColor.G, arguments.Target.BorderColor.G, lerpAmount),
+                Lerp(arguments.Initial.BorderColor.B, arguments.Target.BorderColor.B, lerpAmount),
+                Lerp(arguments.Initial.BorderColor.A, arguments.Target.BorderColor.A, lerpAmount));
+        }
+        if ((arguments.Properties & TransitionProperty.BorderWidth) != 0)
+        {
+            arguments.Current.BorderWidth = new BorderWidth
+            {
+                Left = (ushort)Lerp(arguments.Initial.BorderWidth.Left, arguments.Target.BorderWidth.Left, lerpAmount),
+                Right = (ushort)Lerp(arguments.Initial.BorderWidth.Right, arguments.Target.BorderWidth.Right, lerpAmount),
+                Top = (ushort)Lerp(arguments.Initial.BorderWidth.Top, arguments.Target.BorderWidth.Top, lerpAmount),
+                Bottom = (ushort)Lerp(arguments.Initial.BorderWidth.Bottom, arguments.Target.BorderWidth.Bottom, lerpAmount),
+                BetweenChildren = (ushort)Lerp(arguments.Initial.BorderWidth.BetweenChildren, arguments.Target.BorderWidth.BetweenChildren, lerpAmount),
+            };
+        }
+        return ratio >= 1;
+    }
+
+    // -------------------------------------
+    // DSL (replaces the C macros) ---------
+    // -------------------------------------
+
+    public sealed class ElementScope : IDisposable
+    {
+        void IDisposable.Dispose() => __CloseElement();
+            
+        public void Close() => __CloseElement();
+    }
+
+    private static readonly ElementScope SElementScope = new ElementScope();
+
+    // CLAY(id, ...) { ... }  →  using (Clay.Element(id, decl)) { ... }
+    public static ElementScope Element(ElementId id, ElementDeclaration declaration)
+    {
+        __OpenElementWithId(id);
+        __ConfigureOpenElement(declaration);
+        return SElementScope;
+    }
+
+    // Overload that evaluates the declaration _after_ the element is opened, so expressions like
+    // Clay.Hovered() or Clay.GetScrollOffset() inside the declaration observe the newly opened element
+    // (matching the C macro's evaluation order).
+    public static ElementScope Element(ElementId id, Func<ElementDeclaration> declaration)
+    {
+        __OpenElementWithId(id);
+        __ConfigureOpenElement(declaration());
+        return SElementScope;
+    }
+
+    // AUTO_ID(...) { ... }  →  using (Clay.AutoId(decl)) { ... }
+    public static ElementScope AutoId(ElementDeclaration declaration) => AutoId(() => declaration);
+
+    public static ElementScope AutoId(Func<ElementDeclaration> declaration)
+    {
+        __OpenElement();
+        __ConfigureOpenElement(declaration());
+        return SElementScope;
+    }
+
+    // TEXT(text, ...)  →  Clay.Text(text, config)
+    public static void Text(string text, TextElementConfig textConfig) => __OpenTextElement(text, textConfig);
+
+    // ID helpers (ID / SID / IDI / SIDI / ID_LOCAL / ...)
+    public static ElementId Id(string label) => __HashString(label, 0);
+    public static ElementId SId(string label) => __HashString(label, 0);
+    public static ElementId Idi(string label, uint index) => __HashStringWithOffset(label, index, 0);
+    public static ElementId SIdi(string label, uint index) => __HashStringWithOffset(label, index, 0);
+    public static ElementId IdLocal(string label) => __HashString(label, GetOpenElementId());
+    public static ElementId SIdLocal(string label) => __HashString(label, GetOpenElementId());
+    public static ElementId IdiLocal(string label, uint index) => __HashStringWithOffset(label, index, GetOpenElementId());
+    public static ElementId SIdiLocal(string label, uint index) => __HashStringWithOffset(label, index, GetOpenElementId());
+
+    // Sizing / padding / corner / border helpers (SIZING_* / PADDING_ALL / ...).
+    public static SizingAxis SizingFixed(float fixedSize) => new SizingAxis
+    {
+        MinMax = new SizingMinMax { Min = fixedSize, Max = fixedSize },
+        Type = SizingType.Fixed,
+    };
+
+    public static SizingAxis SizingGrow() => new SizingAxis { MinMax = default, Type = SizingType.Grow };
+    public static SizingAxis SizingGrow(float min) => new SizingAxis { MinMax = new SizingMinMax { Min = min, Max = 0 }, Type = SizingType.Grow };
+    public static SizingAxis SizingGrow(float min, float max) => new SizingAxis { MinMax = new SizingMinMax { Min = min, Max = max }, Type = SizingType.Grow };
+
+    public static SizingAxis SizingFit() => new SizingAxis { MinMax = default, Type = SizingType.Fit };
+    public static SizingAxis SizingFit(float min) => new SizingAxis { MinMax = new SizingMinMax { Min = min, Max = 0 }, Type = SizingType.Fit };
+    public static SizingAxis SizingFit(float min, float max) => new SizingAxis { MinMax = new SizingMinMax { Min = min, Max = max }, Type = SizingType.Fit };
+
+    public static SizingAxis SizingPercent(float percentOfParent) => new SizingAxis { Percent = percentOfParent, Type = SizingType.Percent };
+
+    public static Padding PaddingAll(ushort padding) => new Padding { Left = padding, Right = padding, Top = padding, Bottom = padding };
+    public static CornerRadiusValues CornerRadius(float radius) => new CornerRadiusValues { TopLeft = radius, TopRight = radius, BottomLeft = radius, BottomRight = radius };
+    public static BorderWidth BorderAll(ushort widthValue) => new BorderWidth { Left = widthValue, Right = widthValue, Top = widthValue, Bottom = widthValue, BetweenChildren = widthValue };
+    public static BorderWidth BorderOutside(ushort widthValue) => new BorderWidth { Left = widthValue, Right = widthValue, Top = widthValue, Bottom = widthValue, BetweenChildren = 0 };
 }

@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\FNA.Math\FNA.Math.csproj" />
+        <ProjectReference Include="..\..\..\FNA\FNA.Core.csproj" />
+      <ProjectReference Include="..\ClaySharp.Plugin.TextInput\ClaySharp.Plugin.TextInput.csproj" />
+    </ItemGroup>
+
+</Project>

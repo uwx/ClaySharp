@@ -8,6 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\plugins\ClaySharp.Plugin.TextInput.FNA\ClaySharp.Plugin.TextInput.FNA.csproj" />
+    <ProjectReference Include="..\..\plugins\ClaySharp.Plugin.TextInput\ClaySharp.Plugin.TextInput.csproj" />
     <ProjectReference Include="..\..\renderer\fna\ClaySharp.Renderer.FNA.csproj" />
   </ItemGroup>
 

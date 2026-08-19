@@ -7,7 +7,7 @@
 //     hard character cap (0 = unlimited) rather than a byte capacity, and
 //     dynamic growth is automatic — `onResize` / `resizeUserData` are retained
 //     for API parity but never invoked.
-//   * `Clay_String` becomes `string` and `Clay_StringSlice` becomes
+//   * `Clay.String` becomes `string` and `Clay.StringSlice` becomes
 //     Microsoft.Extensions.Primitives.StringSegment. Byte offsets become UTF-16
 //     code-unit offsets (surrogate-pair aware); `maxLength` still counts
 //     codepoints.
@@ -15,7 +15,7 @@
 //     the static initialiser no longer takes calcBuf/calcBufferSize and the
 //     destroy function needs no free callback.
 //   * `void*` user data becomes `object?`.
-//   * The C macros (CLAY_TEXT_INPUT / CLAY_TEXT_INPUT_WITH_STATE / ...) are
+//   * The C macros (TEXT_INPUT / TEXT_INPUT_WITH_STATE / ...) are
 //     replaced by the static `ClayTextInput` facade.
 //
 // Usage:
@@ -25,52 +25,51 @@
 //   ClayTextInput.Update(deltaTime);
 //   // feed platform events via ClayTextInput.OnChar / ClayTextInput.OnKey
 //   // inside layout:
-//   ClayTextInput.TextInput(Clay.Id("Name"), name, new Clay_TextInputConfig { ... });
+//   ClayTextInput.TextInput(Clay.Id("Name"), name, new TextInputConfig { ... });
 
-using System;
 using System.Numerics;
 using System.Text;
-using ClaySharp;
 using Microsoft.Extensions.Primitives;
 
-namespace ClaySharp.Plugin.TextInput
+namespace ClaySharp.Plugin.TextInput;
+public static class ClayTextInput
 {
     // -----------------------------------------
     // KEY ENUMS -------------------------------
     // -----------------------------------------
 
-    public enum Clay_TI_Action
+    public enum Action
     {
-        CLAY_TI_ACTION_RELEASE = 0,
-        CLAY_TI_ACTION_PRESS,
-        CLAY_TI_ACTION_REPEAT,
+        Release = 0,
+        Press,
+        Repeat,
     }
 
-    public enum Clay_TI_Key
+    public enum Key
     {
-        CLAY_TI_KEY_UNKNOWN = 0,
-        CLAY_TI_KEY_LEFT,
-        CLAY_TI_KEY_RIGHT,
-        CLAY_TI_KEY_HOME,
-        CLAY_TI_KEY_END,
-        CLAY_TI_KEY_BACKSPACE,
-        CLAY_TI_KEY_DELETE,
-        CLAY_TI_KEY_ENTER,
-        CLAY_TI_KEY_ESCAPE,
-        CLAY_TI_KEY_A,
-        CLAY_TI_KEY_C,
-        CLAY_TI_KEY_V,
-        CLAY_TI_KEY_X,
+        Unknown = 0,
+        Left,
+        Right,
+        Home,
+        End,
+        Backspace,
+        Delete,
+        Enter,
+        Escape,
+        A,
+        C,
+        V,
+        X,
     }
 
     [Flags]
-    public enum Clay_TI_Mod
+    public enum Mod
     {
-        CLAY_TI_MOD_NONE = 0,
-        CLAY_TI_MOD_SHIFT = 1 << 0,
-        CLAY_TI_MOD_CTRL = 1 << 1,
-        CLAY_TI_MOD_ALT = 1 << 2,
-        CLAY_TI_MOD_SUPER = 1 << 3,
+        None = 0,
+        Shift = 1 << 0,
+        Ctrl = 1 << 1,
+        Alt = 1 << 2,
+        Super = 1 << 3,
     }
 
     // -----------------------------------------
@@ -79,796 +78,793 @@ namespace ClaySharp.Plugin.TextInput
 
     // Only clipboard I/O and cursor swapping need platform help; all other events
     // are pushed in by the caller via ClayTextInput.OnChar / OnKey.
-    public delegate string? Clay_TextInput_GetClipboardFn(object? userData);
-    public delegate void Clay_TextInput_SetClipboardFn(object? userData, string text);
-    public delegate void Clay_TextInput_SetIbeamCursorFn(object? userData);
-    public delegate void Clay_TextInput_ResetCursorFn(object? userData);
+    public delegate string? GetClipboardFn(object? userData);
+    public delegate void SetClipboardFn(object? userData, string text);
+    public delegate void SetIbeamCursorFn(object? userData);
+    public delegate void ResetCursorFn(object? userData);
 
     // Retained for API parity with the C header. The managed port never invokes
     // the resize callback — managed strings grow automatically and are bounded by
     // bufferSize (chars) and maxLength (codepoints).
-    public delegate Clay_TI_ResizeResult Clay_TI_ResizeFn(string? oldBuf, int oldCapacity, int minCapacity, object? userData);
+    public delegate ResizeResult ResizeFn(string? oldBuf, int oldCapacity, int minCapacity, object? userData);
 
-    public delegate bool Clay_TI_CharFilterFn(uint codepoint, object? userData);
-    public delegate void Clay_TI_ChangedFn(string text, int textLen, object? userData);
+    public delegate bool CharFilterFn(uint codepoint, object? userData);
+    public delegate void ChangedFn(string text, int textLen, object? userData);
 
     // -----------------------------------------
     // STRUCTS ---------------------------------
     // -----------------------------------------
 
-    public struct Clay_TI_ResizeResult
+    public struct ResizeResult
     {
-        public string? buf;
-        public int capacity;
+        public string? Buf;
+        public int Capacity;
     }
 
-    public struct Clay_TextInput_Platform
+    public struct Platform
     {
         // Return clipboard contents; null if empty.
-        public Clay_TextInput_GetClipboardFn? getClipboardText;
+        public GetClipboardFn? GetClipboardText;
         // Write to the system clipboard.
-        public Clay_TextInput_SetClipboardFn? setClipboardText;
+        public SetClipboardFn? SetClipboardText;
         // Set the cursor to I-beam.
-        public Clay_TextInput_SetIbeamCursorFn? setIbeamCursor;
+        public SetIbeamCursorFn? SetIbeamCursor;
         // Reset the cursor back to normal.
-        public Clay_TextInput_ResetCursorFn? resetCursor;
+        public ResetCursorFn? ResetCursor;
         // Passed verbatim to all four callbacks; may be null.
-        public object? userData;
+        public object? UserData;
     }
 
     // Passed to ClayTextInput.TextInput() each frame (immediate-mode style), so
     // any field can change between frames — including toggling callbacks on/off.
-    public struct Clay_TextInputConfig
+    public struct TextInputConfig
     {
         // Sizing & layout.
-        public Clay_Sizing sizing;
-        public Clay_Padding padding;
+        public Clay.Sizing Sizing;
+        public Clay.Padding Padding;
 
         // Text.
-        public Clay_TextElementConfig textConfig;
+        public Clay.TextElementConfig TextConfig;
         // Shown when the buffer is empty and the element is unfocused. Null or
         // empty disables the placeholder.
-        public string? placeholder;
+        public string? Placeholder;
         // Render '*' per codepoint.
-        public bool passwordMode;
+        public bool PasswordMode;
 
         // Colours (RGBA 0–255).
-        public Clay_Color colorPlaceholder;
-        public Clay_Color colorBackground;
-        public Clay_Color colorBorder;
-        public Clay_Color colorBorderFocus;
-        public Clay_Color colorSelection;
-        public Clay_Color colorCursor;
+        public Clay.Color ColorPlaceholder;
+        public Clay.Color ColorBackground;
+        public Clay.Color ColorBorder;
+        public Clay.Color ColorBorderFocus;
+        public Clay.Color ColorSelection;
+        public Clay.Color ColorCursor;
 
         // Shape.
-        public Clay_CornerRadius cornerRadius;
-        public Clay_BorderWidth borderWidth;
+        public Clay.CornerRadiusValues CornerRadius;
+        public Clay.BorderWidth BorderWidth;
 
         // Extra layout.
-        public Clay_FloatingElementConfig floating;
+        public Clay.FloatingElementConfig Floating;
 
         // Behaviour.
         // Maximum codepoints; 0 = unlimited.
-        public int maxLength;
+        public int MaxLength;
         // Cursor blink half-period in seconds; 0 → default 0.53 s.
-        public float cursorBlinkPeriod;
+        public float CursorBlinkPeriod;
 
         // Callbacks (all optional; NULL disables).
         // Dynamic buffer growth — unused in the managed port (strings grow
         // automatically); retained for API parity.
-        public Clay_TI_ResizeFn? onResize;
-        public object? resizeUserData;
+        public ResizeFn? OnResize;
+        public object? ResizeUserData;
         // Per-character filter; NULL → accept all.
-        public Clay_TI_CharFilterFn? onCharFilter;
-        public object? charFilterUserData;
+        public CharFilterFn? OnCharFilter;
+        public object? CharFilterUserData;
         // Post-edit notification.
-        public Clay_TI_ChangedFn? onChanged;
-        public object? changedUserData;
+        public ChangedFn? OnChanged;
+        public object? ChangedUserData;
     }
 
     // Retains all per-input mutable data across frames. A class (like
-    // Clay_LayoutElement) because the C implementation takes it by pointer and
+    // Clay.LayoutElement) because the C implementation takes it by pointer and
     // the focused state is tracked module-wide by reference.
-    public sealed class Clay_TextInputState
+    public sealed class TextInputState
     {
         // Buffer — a managed string; null marks the state as uninitialised.
         // Never cache this; edits reassign the whole string.
-        public string? text;
+        public string? Text;
         // Maximum UTF-16 chars; 0 = unlimited.
-        public int bufferSize;
+        public int BufferSize;
         // Current string length in UTF-16 code units.
-        public int textLen => text?.Length ?? 0;
+        public int TextLen => Text?.Length ?? 0;
 
         // Editing.
         // UTF-16 code-unit offset of the insert point.
-        public int cursorPos;
+        public int CursorPos;
         // UTF-16 code-unit offset; -1 = no selection.
-        public int selectionAnchor = -1;
+        public int SelectionAnchor = -1;
 
         // Focus / blink.
-        public bool focused;
-        public double cursorBlinkTimer;
-        public bool cursorVisible = true;
+        public bool Focused;
+        public double CursorBlinkTimer;
+        public bool CursorVisible = true;
 
         // Internal.
-        public bool _isDynamic;
-        public Clay_ElementId _elementId;
+        public bool IsDynamic;
+        public Clay.ElementId ElementId;
         // Display scratch string (password-masked when enabled).
-        public string _calcText = "";
-        // Cached copy of the most recent Clay_TextInputConfig so OnChar / OnKey
+        public string CalcText = "";
+        // Cached copy of the most recent TextInputConfig so OnChar / OnKey
         // can read the callbacks without extra arguments.
-        public Clay_TextInputConfig _cfg;
-        public ulong _lastClickFrame;
-        public bool _lastClickWasDouble;
-        public bool _dragSelecting;
-        public int _dragAnchor;
+        public TextInputConfig Cfg;
+        public ulong LastClickFrame;
+        public bool LastClickWasDouble;
+        public bool DragSelecting;
+        public int DragAnchor;
     }
 
     // -----------------------------------------
     // FACADE ----------------------------------
     // -----------------------------------------
 
-    public static class ClayTextInput
+    private static Platform _platform;
+    private static bool _cursorIsIbeam;
+    private static TextInputState? _focused;
+    private static ulong _frameCount;
+
+    // ── Module lifecycle ──────────────────────────────────────────────
+
+    public static void SetPlatform(Platform platform)
     {
-        private static Clay_TextInput_Platform g_platform;
-        private static bool g_cursorIsIbeam;
-        private static Clay_TextInputState? g_focused;
-        private static ulong g_frameCount;
+        _platform = platform;
+        _focused = null;
+        _cursorIsIbeam = false;
+    }
 
-        // ── Module lifecycle ──────────────────────────────────────────────
-
-        public static void SetPlatform(Clay_TextInput_Platform platform)
+    public static void Update(double dt)
+    {
+        _frameCount++;
+        if (_focused == null) return;
+        _focused.CursorBlinkTimer += dt;
+        double period = _focused.Cfg.CursorBlinkPeriod > 0f
+            ? _focused.Cfg.CursorBlinkPeriod
+            : 0.53;
+        while (_focused.CursorBlinkTimer >= period)
         {
-            g_platform = platform;
-            g_focused = null;
-            g_cursorIsIbeam = false;
+            _focused.CursorBlinkTimer -= period;
+            _focused.CursorVisible = !_focused.CursorVisible;
         }
+    }
 
-        public static void Update(double dt)
+    // ── Event feed ────────────────────────────────────────────────────
+
+    public static void OnChar(uint codepoint)
+    {
+        if (_focused == null) return;
+        var cfg = _focused.Cfg;
+        if (cfg.OnCharFilter != null && !cfg.OnCharFilter(codepoint, cfg.CharFilterUserData)) return;
+
+        // Reject values that would not form a valid UTF-16 scalar.
+        if (codepoint > 0x10FFFF || (codepoint >= 0xD800 && codepoint <= 0xDFFF)) return;
+
+        var rune = new Rune((int)codepoint);
+        Span<char> buf = stackalloc char[2];
+        int n = rune.EncodeToUtf16(buf);
+        Insert(_focused, new string(buf.Slice(0, n)), n);
+
+        _focused.CursorBlinkTimer = 0.0;
+        _focused.CursorVisible = true;
+    }
+
+    public static void OnKey(Key key, Action action, Mod mods)
+    {
+        if (_focused == null) return;
+        if (action != Action.Press && action != Action.Repeat) return;
+
+        var s = _focused;
+        bool ctrl = (mods & Mod.Ctrl) != 0;
+        bool shift = (mods & Mod.Shift) != 0;
+
+        switch (key)
         {
-            g_frameCount++;
-            if (g_focused == null) return;
-            g_focused.cursorBlinkTimer += dt;
-            double period = g_focused._cfg.cursorBlinkPeriod > 0f
-                            ? g_focused._cfg.cursorBlinkPeriod
-                            : 0.53;
-            while (g_focused.cursorBlinkTimer >= period)
+            case Key.Left:
             {
-                g_focused.cursorBlinkTimer -= period;
-                g_focused.cursorVisible = !g_focused.cursorVisible;
-            }
-        }
-
-        // ── Event feed ────────────────────────────────────────────────────
-
-        public static void OnChar(uint codepoint)
-        {
-            if (g_focused == null) return;
-            var cfg = g_focused._cfg;
-            if (cfg.onCharFilter != null && !cfg.onCharFilter(codepoint, cfg.charFilterUserData)) return;
-
-            // Reject values that would not form a valid UTF-16 scalar.
-            if (codepoint > 0x10FFFF || (codepoint >= 0xD800 && codepoint <= 0xDFFF)) return;
-
-            var rune = new Rune((int)codepoint);
-            Span<char> buf = stackalloc char[2];
-            int n = rune.EncodeToUtf16(buf);
-            Insert(g_focused, new string(buf.Slice(0, n)), n);
-
-            g_focused.cursorBlinkTimer = 0.0;
-            g_focused.cursorVisible = true;
-        }
-
-        public static void OnKey(Clay_TI_Key key, Clay_TI_Action action, Clay_TI_Mod mods)
-        {
-            if (g_focused == null) return;
-            if (action != Clay_TI_Action.CLAY_TI_ACTION_PRESS && action != Clay_TI_Action.CLAY_TI_ACTION_REPEAT) return;
-
-            var s = g_focused;
-            bool ctrl = (mods & Clay_TI_Mod.CLAY_TI_MOD_CTRL) != 0;
-            bool shift = (mods & Clay_TI_Mod.CLAY_TI_MOD_SHIFT) != 0;
-
-            switch (key)
-            {
-                case Clay_TI_Key.CLAY_TI_KEY_LEFT:
+                bool hadSelection = s.SelectionAnchor >= 0 && s.SelectionAnchor != s.CursorPos;
+                int oldAnchor = s.SelectionAnchor;
+                ShiftAnchor(s, shift);
+                if (!shift && hadSelection)
                 {
-                    bool hadSelection = s.selectionAnchor >= 0 && s.selectionAnchor != s.cursorPos;
-                    int oldAnchor = s.selectionAnchor;
-                    ShiftAnchor(s, shift);
-                    if (!shift && hadSelection)
-                    {
-                        s.cursorPos = Math.Min(s.cursorPos, oldAnchor);
-                        s.selectionAnchor = -1;
-                    }
-                    else
-                    {
-                        s.cursorPos = ctrl ? WordLeft(s.text ?? "", s.cursorPos)
-                                           : Utf16Prev(s.text ?? "", s.cursorPos);
-                    }
-                    break;
-                }
-                case Clay_TI_Key.CLAY_TI_KEY_RIGHT:
-                {
-                    bool hadSelection = s.selectionAnchor >= 0 && s.selectionAnchor != s.cursorPos;
-                    int oldAnchor = s.selectionAnchor;
-                    ShiftAnchor(s, shift);
-                    if (!shift && hadSelection)
-                    {
-                        s.cursorPos = Math.Max(s.cursorPos, oldAnchor);
-                        s.selectionAnchor = -1;
-                    }
-                    else
-                    {
-                        s.cursorPos = ctrl ? WordRight(s.text ?? "", s.cursorPos, s.textLen)
-                                           : Utf16Next(s.text ?? "", s.cursorPos, s.textLen);
-                    }
-                    break;
-                }
-                case Clay_TI_Key.CLAY_TI_KEY_HOME:
-                    ShiftAnchor(s, shift);
-                    s.cursorPos = 0;
-                    break;
-                case Clay_TI_Key.CLAY_TI_KEY_END:
-                    ShiftAnchor(s, shift);
-                    s.cursorPos = s.textLen;
-                    break;
-                case Clay_TI_Key.CLAY_TI_KEY_BACKSPACE:
-                {
-                    int lo, hi;
-                    if (s.selectionAnchor >= 0 && s.selectionAnchor != s.cursorPos)
-                    {
-                        lo = Math.Min(s.cursorPos, s.selectionAnchor);
-                        hi = Math.Max(s.cursorPos, s.selectionAnchor);
-                        s.cursorPos = lo;
-                    }
-                    else if (s.cursorPos > 0)
-                    {
-                        lo = ctrl ? WordLeft(s.text ?? "", s.cursorPos) : Utf16Prev(s.text ?? "", s.cursorPos);
-                        hi = s.cursorPos;
-                        s.cursorPos = lo;
-                    }
-                    else break;
-                    DeleteNotify(s, lo, hi);
-                    s.selectionAnchor = -1;
-                    break;
-                }
-                case Clay_TI_Key.CLAY_TI_KEY_DELETE:
-                {
-                    int lo, hi;
-                    if (s.selectionAnchor >= 0 && s.selectionAnchor != s.cursorPos)
-                    {
-                        lo = Math.Min(s.cursorPos, s.selectionAnchor);
-                        hi = Math.Max(s.cursorPos, s.selectionAnchor);
-                        s.cursorPos = lo;
-                    }
-                    else if (s.cursorPos < s.textLen)
-                    {
-                        lo = s.cursorPos;
-                        hi = ctrl ? WordRight(s.text ?? "", s.cursorPos, s.textLen)
-                                  : Utf16Next(s.text ?? "", s.cursorPos, s.textLen);
-                    }
-                    else break;
-                    DeleteNotify(s, lo, hi);
-                    s.selectionAnchor = -1;
-                    break;
-                }
-                case Clay_TI_Key.CLAY_TI_KEY_A:
-                    if (ctrl) { s.selectionAnchor = 0; s.cursorPos = s.textLen; }
-                    break;
-                case Clay_TI_Key.CLAY_TI_KEY_C:
-                    if (ctrl) CopySelection(s);
-                    break;
-                case Clay_TI_Key.CLAY_TI_KEY_X:
-                    if (ctrl)
-                    {
-                        CopySelection(s);
-                        if (s.selectionAnchor >= 0 && s.selectionAnchor != s.cursorPos)
-                        {
-                            int lo = Math.Min(s.cursorPos, s.selectionAnchor);
-                            int hi = Math.Max(s.cursorPos, s.selectionAnchor);
-                            DeleteNotify(s, lo, hi);
-                            s.cursorPos = lo;
-                        }
-                    }
-                    break;
-                case Clay_TI_Key.CLAY_TI_KEY_V:
-                    if (ctrl && g_platform.getClipboardText != null)
-                    {
-                        string? clip = g_platform.getClipboardText(g_platform.userData);
-                        if (clip != null) Insert(s, clip, clip.Length);
-                    }
-                    break;
-                case Clay_TI_Key.CLAY_TI_KEY_ESCAPE:
-                case Clay_TI_Key.CLAY_TI_KEY_ENTER:
-                    Unfocus(s);
-                    break;
-            }
-
-            s.cursorBlinkTimer = 0.0;
-            s.cursorVisible = true;
-        }
-
-        // ── State initialisers ────────────────────────────────────────────
-
-        public static Clay_TextInputState State_Static(Clay_ElementId elementId, int bufferSize)
-        {
-            return new Clay_TextInputState
-            {
-                text = "",
-                bufferSize = bufferSize,
-                cursorPos = 0,
-                selectionAnchor = -1,
-                cursorVisible = true,
-                _elementId = elementId,
-                _isDynamic = false,
-                _calcText = "",
-            };
-        }
-
-        public static bool State_InitDynamic(
-            Clay_TextInputState state,
-            int initialCapacity,
-            Clay_ElementId elementId,
-            Clay_TI_ResizeFn? resizeFn,
-            object? resizeUserData)
-        {
-            state.text = "";
-            state.bufferSize = 0;
-            state.cursorPos = 0;
-            state.selectionAnchor = -1;
-            state.focused = false;
-            state.cursorVisible = true;
-            state._elementId = elementId;
-            state._isDynamic = true;
-            state._calcText = "";
-            // initialCapacity / resizeFn are unused: managed strings grow automatically.
-            return true;
-        }
-
-        public static void State_Destroy(Clay_TextInputState state)
-        {
-            state.text = null;
-            state.bufferSize = 0;
-            state.selectionAnchor = -1;
-            state.focused = false;
-            state._isDynamic = false;
-            state._dragSelecting = false;
-            if (ReferenceEquals(g_focused, state)) g_focused = null;
-        }
-
-        public static void State_Insert(Clay_TextInputState state, int at, string s)
-        {
-            if (at < 0) at = 0;
-            else if (at > state.textLen) at = state.textLen;
-            state.cursorPos = at;
-            Insert(state, s, s.Length);
-        }
-
-        // ── Element DSL ───────────────────────────────────────────────────
-
-        // CLAY_TEXT_INPUT(id, state, cfg) — auto-initialises an uninitialised state.
-        public static void TextInput(Clay_ElementId id, Clay_TextInputState state, Clay_TextInputConfig cfg)
-        {
-            if (state.text == null)
-            {
-                state.text = "";
-                state._elementId = id;
-                state._isDynamic = true;
-            }
-            __Element(state, cfg);
-        }
-
-        // CLAY_TEXT_INPUT_WITH_STATE(state, cfg) — uses the state's stored element id.
-        public static void TextInput(Clay_TextInputState state, Clay_TextInputConfig cfg) => __Element(state, cfg);
-
-        // ── Internals ─────────────────────────────────────────────────────
-
-        private static void __Element(Clay_TextInputState state, Clay_TextInputConfig cfg)
-        {
-            state._cfg = cfg;
-            state.text ??= string.Empty;
-
-            Clay_PointerData pointerData = Clay.GetPointerState();
-
-            // Click → focus / unfocus.
-            if (pointerData.state == Clay_PointerDataInteractionState.CLAY_POINTER_DATA_PRESSED_THIS_FRAME)
-            {
-                if (Clay.PointerOver(state._elementId))
-                {
-                    Clay_ElementData elementData = Clay.GetElementData(state._elementId);
-                    Focus(state);
-
-                    bool isDoubleClick = state._lastClickFrame > 0
-                                         && !state._lastClickWasDouble
-                                         && (g_frameCount - state._lastClickFrame) <= 20;
-                    if (isDoubleClick)
-                    {
-                        state.selectionAnchor = 0;
-                        state.cursorPos = state.textLen;
-                        state._dragSelecting = false;
-                        state._lastClickWasDouble = true;
-                    }
-                    else
-                    {
-                        bool hasClickPos = false;
-                        int clickPos = state.cursorPos;
-                        if (elementData.found)
-                        {
-                            float clickX = pointerData.position.X - elementData.boundingBox.x - cfg.padding.left;
-                            hasClickPos = ByteAtXIfInBounds(state, cfg, clickX, out clickPos);
-                        }
-
-                        if (hasClickPos) state.cursorPos = clickPos;
-                        state.selectionAnchor = -1;
-                        state._dragAnchor = state.cursorPos;
-                        state._dragSelecting = hasClickPos;
-                        state._lastClickWasDouble = false;
-                    }
-
-                    state._lastClickFrame = g_frameCount;
-                    state.cursorBlinkTimer = 0.0;
-                    state.cursorVisible = true;
-                }
-                else if (ReferenceEquals(g_focused, state))
-                {
-                    Unfocus(state);
-                }
-            }
-
-            // Drag selection.
-            if (state.focused && state._dragSelecting
-                && pointerData.state == Clay_PointerDataInteractionState.CLAY_POINTER_DATA_PRESSED)
-            {
-                Clay_ElementData elementData = Clay.GetElementData(state._elementId);
-                if (elementData.found)
-                {
-                    float dragX = pointerData.position.X - elementData.boundingBox.x - cfg.padding.left;
-                    int dragPos = ByteAtX(state, cfg, dragX);
-                    state.cursorPos = dragPos;
-                    state.selectionAnchor = (dragPos == state._dragAnchor) ? -1 : state._dragAnchor;
-                    state.cursorBlinkTimer = 0.0;
-                    state.cursorVisible = true;
-                }
-            }
-
-            if (pointerData.state == Clay_PointerDataInteractionState.CLAY_POINTER_DATA_RELEASED_THIS_FRAME)
-            {
-                state._dragSelecting = false;
-            }
-
-            // I-beam cursor.
-            if (g_platform.setIbeamCursor != null && !g_cursorIsIbeam && Clay.PointerOver(state._elementId))
-            {
-                g_cursorIsIbeam = true;
-                g_platform.setIbeamCursor(g_platform.userData);
-            }
-            else if (g_platform.resetCursor != null && g_cursorIsIbeam && !Clay.PointerOver(state._elementId))
-            {
-                g_cursorIsIbeam = false;
-                g_platform.resetCursor(g_platform.userData);
-            }
-
-            Clay_Color borderColor = state.focused ? cfg.colorBorderFocus : cfg.colorBorder;
-
-            using (Clay.Element(state._elementId, new Clay_ElementDeclaration
-            {
-                layout = new Clay_LayoutConfig
-                {
-                    sizing = cfg.sizing,
-                    padding = cfg.padding,
-                    childAlignment = new Clay_ChildAlignment { y = Clay_LayoutAlignmentY.CLAY_ALIGN_Y_CENTER },
-                },
-                backgroundColor = cfg.colorBackground,
-                cornerRadius = cfg.cornerRadius,
-                floating = cfg.floating,
-                border = new Clay_BorderElementConfig { color = borderColor, width = cfg.borderWidth },
-            }))
-            {
-                const string testWidthChar = " ";
-                float visualXBias = MeasureWidth(new StringSegment(testWidthChar), cfg) * 0.33f;
-                float cursorH = cfg.textConfig.fontSize;
-                const float cursorW = 2.0f;
-
-                float textOffsetX = cfg.padding.left;
-                float cursorX = 0f;
-                float selectionX = 0f;
-                float selectionW = 0f;
-                bool hasSelection = false;
-
-                if (state.focused)
-                {
-                    cursorX = MeasureTo(state, cfg, state.cursorPos);
-                    if (state.selectionAnchor >= 0 && state.selectionAnchor != state.cursorPos)
-                    {
-                        int lo = Math.Min(state.cursorPos, state.selectionAnchor);
-                        int hi = Math.Max(state.cursorPos, state.selectionAnchor);
-                        float sx = MeasureTo(state, cfg, lo);
-                        selectionX = sx;
-                        selectionW = MeasureTo(state, cfg, hi) - sx;
-                        hasSelection = true;
-                    }
-                }
-
-                // Placeholder or text content.
-                if (state.textLen == 0 && !string.IsNullOrEmpty(cfg.placeholder) && !state.focused)
-                {
-                    Clay_TextElementConfig placeholderConfig = cfg.textConfig;
-                    placeholderConfig.textColor = cfg.colorPlaceholder;
-                    Clay.Text(cfg.placeholder, placeholderConfig);
+                    s.CursorPos = Math.Min(s.CursorPos, oldAnchor);
+                    s.SelectionAnchor = -1;
                 }
                 else
                 {
-                    Clay.Text(DisplayString(state, cfg), cfg.textConfig);
+                    s.CursorPos = ctrl ? WordLeft(s.Text ?? "", s.CursorPos)
+                        : Utf16Prev(s.Text ?? "", s.CursorPos);
                 }
-
-                // Cursor / selection (focused only).
-                if (state.focused)
+                break;
+            }
+            case Key.Right:
+            {
+                bool hadSelection = s.SelectionAnchor >= 0 && s.SelectionAnchor != s.CursorPos;
+                int oldAnchor = s.SelectionAnchor;
+                ShiftAnchor(s, shift);
+                if (!shift && hadSelection)
                 {
-                    if (hasSelection)
+                    s.CursorPos = Math.Max(s.CursorPos, oldAnchor);
+                    s.SelectionAnchor = -1;
+                }
+                else
+                {
+                    s.CursorPos = ctrl ? WordRight(s.Text ?? "", s.CursorPos, s.TextLen)
+                        : Utf16Next(s.Text ?? "", s.CursorPos, s.TextLen);
+                }
+                break;
+            }
+            case Key.Home:
+                ShiftAnchor(s, shift);
+                s.CursorPos = 0;
+                break;
+            case Key.End:
+                ShiftAnchor(s, shift);
+                s.CursorPos = s.TextLen;
+                break;
+            case Key.Backspace:
+            {
+                int lo, hi;
+                if (s.SelectionAnchor >= 0 && s.SelectionAnchor != s.CursorPos)
+                {
+                    lo = Math.Min(s.CursorPos, s.SelectionAnchor);
+                    hi = Math.Max(s.CursorPos, s.SelectionAnchor);
+                    s.CursorPos = lo;
+                }
+                else if (s.CursorPos > 0)
+                {
+                    lo = ctrl ? WordLeft(s.Text ?? "", s.CursorPos) : Utf16Prev(s.Text ?? "", s.CursorPos);
+                    hi = s.CursorPos;
+                    s.CursorPos = lo;
+                }
+                else break;
+                DeleteNotify(s, lo, hi);
+                s.SelectionAnchor = -1;
+                break;
+            }
+            case Key.Delete:
+            {
+                int lo, hi;
+                if (s.SelectionAnchor >= 0 && s.SelectionAnchor != s.CursorPos)
+                {
+                    lo = Math.Min(s.CursorPos, s.SelectionAnchor);
+                    hi = Math.Max(s.CursorPos, s.SelectionAnchor);
+                    s.CursorPos = lo;
+                }
+                else if (s.CursorPos < s.TextLen)
+                {
+                    lo = s.CursorPos;
+                    hi = ctrl ? WordRight(s.Text ?? "", s.CursorPos, s.TextLen)
+                        : Utf16Next(s.Text ?? "", s.CursorPos, s.TextLen);
+                }
+                else break;
+                DeleteNotify(s, lo, hi);
+                s.SelectionAnchor = -1;
+                break;
+            }
+            case Key.A:
+                if (ctrl) { s.SelectionAnchor = 0; s.CursorPos = s.TextLen; }
+                break;
+            case Key.C:
+                if (ctrl) CopySelection(s);
+                break;
+            case Key.X:
+                if (ctrl)
+                {
+                    CopySelection(s);
+                    if (s.SelectionAnchor >= 0 && s.SelectionAnchor != s.CursorPos)
                     {
-                        using (Clay.AutoId(new Clay_ElementDeclaration
-                        {
-                            layout = new Clay_LayoutConfig { sizing = new Clay_Sizing { width = Clay.SizingFixed(selectionW), height = Clay.SizingFixed(cursorH) } },
-                            backgroundColor = cfg.colorSelection,
-                            floating = new Clay_FloatingElementConfig
-                            {
-                                offset = new Vector2(textOffsetX + selectionX + visualXBias, 0),
-                                attachPoints = new Clay_FloatingAttachPoints
-                                {
-                                    element = Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_LEFT_CENTER,
-                                    parent = Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_LEFT_CENTER,
-                                },
-                                attachTo = Clay_FloatingAttachToElement.CLAY_ATTACH_TO_PARENT,
-                            },
-                        })) { }
+                        int lo = Math.Min(s.CursorPos, s.SelectionAnchor);
+                        int hi = Math.Max(s.CursorPos, s.SelectionAnchor);
+                        DeleteNotify(s, lo, hi);
+                        s.CursorPos = lo;
+                    }
+                }
+                break;
+            case Key.V:
+                if (ctrl && _platform.GetClipboardText != null)
+                {
+                    string? clip = _platform.GetClipboardText(_platform.UserData);
+                    if (clip != null) Insert(s, clip, clip.Length);
+                }
+                break;
+            case Key.Escape:
+            case Key.Enter:
+                Unfocus(s);
+                break;
+        }
+
+        s.CursorBlinkTimer = 0.0;
+        s.CursorVisible = true;
+    }
+
+    // ── State initialisers ────────────────────────────────────────────
+
+    public static TextInputState State_Static(Clay.ElementId elementId, int bufferSize)
+    {
+        return new TextInputState
+        {
+            Text = "",
+            BufferSize = bufferSize,
+            CursorPos = 0,
+            SelectionAnchor = -1,
+            CursorVisible = true,
+            ElementId = elementId,
+            IsDynamic = false,
+            CalcText = "",
+        };
+    }
+
+    public static bool State_InitDynamic(
+        TextInputState state,
+        int initialCapacity,
+        Clay.ElementId elementId,
+        ResizeFn? resizeFn,
+        object? resizeUserData)
+    {
+        state.Text = "";
+        state.BufferSize = 0;
+        state.CursorPos = 0;
+        state.SelectionAnchor = -1;
+        state.Focused = false;
+        state.CursorVisible = true;
+        state.ElementId = elementId;
+        state.IsDynamic = true;
+        state.CalcText = "";
+        // initialCapacity / resizeFn are unused: managed strings grow automatically.
+        return true;
+    }
+
+    public static void State_Destroy(TextInputState state)
+    {
+        state.Text = null;
+        state.BufferSize = 0;
+        state.SelectionAnchor = -1;
+        state.Focused = false;
+        state.IsDynamic = false;
+        state.DragSelecting = false;
+        if (ReferenceEquals(_focused, state)) _focused = null;
+    }
+
+    public static void State_Insert(TextInputState state, int at, string s)
+    {
+        if (at < 0) at = 0;
+        else if (at > state.TextLen) at = state.TextLen;
+        state.CursorPos = at;
+        Insert(state, s, s.Length);
+    }
+
+    // ── Element DSL ───────────────────────────────────────────────────
+
+    // TEXT_INPUT(id, state, cfg) — auto-initialises an uninitialised state.
+    public static void TextInput(Clay.ElementId id, TextInputState state, TextInputConfig cfg)
+    {
+        if (state.Text == null)
+        {
+            state.Text = "";
+            state.ElementId = id;
+            state.IsDynamic = true;
+        }
+        __Element(state, cfg);
+    }
+
+    // TEXT_INPUT_WITH_STATE(state, cfg) — uses the state's stored element id.
+    public static void TextInput(TextInputState state, TextInputConfig cfg) => __Element(state, cfg);
+
+    // ── Internals ─────────────────────────────────────────────────────
+
+    private static void __Element(TextInputState state, TextInputConfig cfg)
+    {
+        state.Cfg = cfg;
+        state.Text ??= string.Empty;
+
+        Clay.PointerData pointerData = Clay.GetPointerState();
+
+        // Click → focus / unfocus.
+        if (pointerData.State == Clay.PointerDataInteractionState.PressedThisFrame)
+        {
+            if (Clay.PointerOver(state.ElementId))
+            {
+                Clay.ElementData elementData = Clay.GetElementData(state.ElementId);
+                Focus(state);
+
+                bool isDoubleClick = state.LastClickFrame > 0
+                                     && !state.LastClickWasDouble
+                                     && (_frameCount - state.LastClickFrame) <= 20;
+                if (isDoubleClick)
+                {
+                    state.SelectionAnchor = 0;
+                    state.CursorPos = state.TextLen;
+                    state.DragSelecting = false;
+                    state.LastClickWasDouble = true;
+                }
+                else
+                {
+                    bool hasClickPos = false;
+                    int clickPos = state.CursorPos;
+                    if (elementData.Found)
+                    {
+                        float clickX = pointerData.Position.X - elementData.BoundingBox.X - cfg.Padding.Left;
+                        hasClickPos = ByteAtXIfInBounds(state, cfg, clickX, out clickPos);
                     }
 
-                    if (state.cursorVisible && !hasSelection)
-                    {
-                        using (Clay.AutoId(new Clay_ElementDeclaration
-                        {
-                            layout = new Clay_LayoutConfig { sizing = new Clay_Sizing { width = Clay.SizingFixed(cursorW), height = Clay.SizingFixed(cursorH) } },
-                            backgroundColor = cfg.colorCursor,
-                            floating = new Clay_FloatingElementConfig
-                            {
-                                offset = new Vector2(textOffsetX + cursorX + 0.5f, 0),
-                                attachPoints = new Clay_FloatingAttachPoints
-                                {
-                                    element = Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_LEFT_CENTER,
-                                    parent = Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_LEFT_CENTER,
-                                },
-                                attachTo = Clay_FloatingAttachToElement.CLAY_ATTACH_TO_PARENT,
-                            },
-                        })) { }
-                    }
+                    if (hasClickPos) state.CursorPos = clickPos;
+                    state.SelectionAnchor = -1;
+                    state.DragAnchor = state.CursorPos;
+                    state.DragSelecting = hasClickPos;
+                    state.LastClickWasDouble = false;
                 }
+
+                state.LastClickFrame = _frameCount;
+                state.CursorBlinkTimer = 0.0;
+                state.CursorVisible = true;
+            }
+            else if (ReferenceEquals(_focused, state))
+            {
+                Unfocus(state);
             }
         }
 
-        // ── Editing primitives ────────────────────────────────────────────
-
-        private static void Insert(Clay_TextInputState s, string str, int strLen)
+        // Drag selection.
+        if (state.Focused && state.DragSelecting
+                          && pointerData.State == Clay.PointerDataInteractionState.Pressed)
         {
-            if (strLen > str.Length) strLen = str.Length;
-
-            // Replace selection.
-            if (s.selectionAnchor >= 0 && s.selectionAnchor != s.cursorPos)
+            Clay.ElementData elementData = Clay.GetElementData(state.ElementId);
+            if (elementData.Found)
             {
-                int lo = Math.Min(s.cursorPos, s.selectionAnchor);
-                int hi = Math.Max(s.cursorPos, s.selectionAnchor);
-                DeleteRange(s, lo, hi);
-                s.cursorPos = lo;
+                float dragX = pointerData.Position.X - elementData.BoundingBox.X - cfg.Padding.Left;
+                int dragPos = ByteAtX(state, cfg, dragX);
+                state.CursorPos = dragPos;
+                state.SelectionAnchor = (dragPos == state.DragAnchor) ? -1 : state.DragAnchor;
+                state.CursorBlinkTimer = 0.0;
+                state.CursorVisible = true;
             }
-            s.selectionAnchor = -1;
+        }
 
-            // Trim to maxLength (codepoints).
-            if (s._cfg.maxLength > 0)
+        if (pointerData.State == Clay.PointerDataInteractionState.ReleasedThisFrame)
+        {
+            state.DragSelecting = false;
+        }
+
+        // I-beam cursor.
+        if (_platform.SetIbeamCursor != null && !_cursorIsIbeam && Clay.PointerOver(state.ElementId))
+        {
+            _cursorIsIbeam = true;
+            _platform.SetIbeamCursor(_platform.UserData);
+        }
+        else if (_platform.ResetCursor != null && _cursorIsIbeam && !Clay.PointerOver(state.ElementId))
+        {
+            _cursorIsIbeam = false;
+            _platform.ResetCursor(_platform.UserData);
+        }
+
+        Clay.Color borderColor = state.Focused ? cfg.ColorBorderFocus : cfg.ColorBorder;
+
+        using (Clay.Element(state.ElementId, new Clay.ElementDeclaration
+               {
+                   Layout = new Clay.LayoutConfig
+                   {
+                       Sizing = cfg.Sizing,
+                       Padding = cfg.Padding,
+                       ChildAlignment = new Clay.ChildAlignment { Y = Clay.LayoutAlignmentY.Center },
+                   },
+                   BackgroundColor = cfg.ColorBackground,
+                   CornerRadius = cfg.CornerRadius,
+                   Floating = cfg.Floating,
+                   Border = new Clay.BorderElementConfig { Color = borderColor, Width = cfg.BorderWidth },
+               }))
+        {
+            const string testWidthChar = " ";
+            float visualXBias = MeasureWidth(new StringSegment(testWidthChar), cfg) * 0.33f;
+            float cursorH = cfg.TextConfig.FontSize;
+            const float cursorW = 2.0f;
+
+            float textOffsetX = cfg.Padding.Left;
+            float cursorX = 0f;
+            float selectionX = 0f;
+            float selectionW = 0f;
+            bool hasSelection = false;
+
+            if (state.Focused)
             {
-                int rem = s._cfg.maxLength - RuneCount(s.text ?? "", s.textLen);
-                if (rem <= 0) return;
-                int cp = 0, i = 0;
-                while (i < strLen && cp < rem)
+                cursorX = MeasureTo(state, cfg, state.CursorPos);
+                if (state.SelectionAnchor >= 0 && state.SelectionAnchor != state.CursorPos)
                 {
-                    i = Utf16Next(str, i, strLen);
-                    cp++;
+                    int lo = Math.Min(state.CursorPos, state.SelectionAnchor);
+                    int hi = Math.Max(state.CursorPos, state.SelectionAnchor);
+                    float sx = MeasureTo(state, cfg, lo);
+                    selectionX = sx;
+                    selectionW = MeasureTo(state, cfg, hi) - sx;
+                    hasSelection = true;
                 }
-                strLen = i;
             }
-            if (strLen <= 0) return;
 
-            // Enforce the character cap (bufferSize > 0 → static mode).
-            if (s.bufferSize > 0)
+            // Placeholder or text content.
+            if (state.TextLen == 0 && !string.IsNullOrEmpty(cfg.Placeholder) && !state.Focused)
             {
-                int rem = s.bufferSize - s.textLen;
-                if (rem <= 0) return;
-                if (strLen > rem) strLen = rem;
-                // Never split a surrogate pair.
-                if (strLen > 0 && strLen < str.Length && char.IsLowSurrogate(str[strLen])) strLen--;
-                if (strLen <= 0) return;
+                Clay.TextElementConfig placeholderConfig = cfg.TextConfig;
+                placeholderConfig.TextColor = cfg.ColorPlaceholder;
+                Clay.Text(cfg.Placeholder, placeholderConfig);
+            }
+            else
+            {
+                Clay.Text(DisplayString(state, cfg), cfg.TextConfig);
             }
 
-            var current = s.text ?? "";
-            s.text = current.Substring(0, s.cursorPos) + str.Substring(0, strLen) + current.Substring(s.cursorPos);
-            s.cursorPos += strLen;
+            // Cursor / selection (focused only).
+            if (state.Focused)
+            {
+                if (hasSelection)
+                {
+                    using (Clay.AutoId(new Clay.ElementDeclaration
+                           {
+                               Layout = new Clay.LayoutConfig { Sizing = new Clay.Sizing { Width = Clay.SizingFixed(selectionW), Height = Clay.SizingFixed(cursorH) } },
+                               BackgroundColor = cfg.ColorSelection,
+                               Floating = new Clay.FloatingElementConfig
+                               {
+                                   Offset = new Vector2(textOffsetX + selectionX + visualXBias, 0),
+                                   AttachPoints = new Clay.FloatingAttachPoints
+                                   {
+                                       Element = Clay.FloatingAttachPointType.LeftCenter,
+                                       Parent = Clay.FloatingAttachPointType.LeftCenter,
+                                   },
+                                   AttachTo = Clay.FloatingAttachToElement.Parent,
+                               },
+                           })) { }
+                }
 
-            if (s._cfg.onChanged != null)
-                s._cfg.onChanged(s.text, s.textLen, s._cfg.changedUserData);
+                if (state.CursorVisible && !hasSelection)
+                {
+                    using (Clay.AutoId(new Clay.ElementDeclaration
+                           {
+                               Layout = new Clay.LayoutConfig { Sizing = new Clay.Sizing { Width = Clay.SizingFixed(cursorW), Height = Clay.SizingFixed(cursorH) } },
+                               BackgroundColor = cfg.ColorCursor,
+                               Floating = new Clay.FloatingElementConfig
+                               {
+                                   Offset = new Vector2(textOffsetX + cursorX + 0.5f, 0),
+                                   AttachPoints = new Clay.FloatingAttachPoints
+                                   {
+                                       Element = Clay.FloatingAttachPointType.LeftCenter,
+                                       Parent = Clay.FloatingAttachPointType.LeftCenter,
+                                   },
+                                   AttachTo = Clay.FloatingAttachToElement.Parent,
+                               },
+                           })) { }
+                }
+            }
         }
+    }
 
-        private static void DeleteRange(Clay_TextInputState s, int lo, int hi)
+    // ── Editing primitives ────────────────────────────────────────────
+
+    private static void Insert(TextInputState s, string str, int strLen)
+    {
+        if (strLen > str.Length) strLen = str.Length;
+
+        // Replace selection.
+        if (s.SelectionAnchor >= 0 && s.SelectionAnchor != s.CursorPos)
         {
-            var t = s.text ?? "";
-            if (lo < 0) lo = 0;
-            if (hi > t.Length) hi = t.Length;
-            if (lo >= hi) return;
-
-            s.text = t.Substring(0, lo) + t.Substring(hi);
-            if (s.cursorPos > hi) s.cursorPos -= hi - lo;
-            else if (s.cursorPos > lo) s.cursorPos = lo;
-            s.selectionAnchor = -1;
-        }
-
-        private static void DeleteNotify(Clay_TextInputState s, int lo, int hi)
-        {
-            int before = s.textLen;
+            int lo = Math.Min(s.CursorPos, s.SelectionAnchor);
+            int hi = Math.Max(s.CursorPos, s.SelectionAnchor);
             DeleteRange(s, lo, hi);
-            if (s.textLen != before && s._cfg.onChanged != null)
-                s._cfg.onChanged(s.text!, s.textLen, s._cfg.changedUserData);
+            s.CursorPos = lo;
         }
+        s.SelectionAnchor = -1;
 
-        private static void CopySelection(Clay_TextInputState s)
+        // Trim to maxLength (codepoints).
+        if (s.Cfg.MaxLength > 0)
         {
-            if (g_platform.setClipboardText == null) return;
-            if (s.selectionAnchor < 0 || s.selectionAnchor == s.cursorPos) return;
-            int lo = Math.Min(s.cursorPos, s.selectionAnchor);
-            int hi = Math.Max(s.cursorPos, s.selectionAnchor);
-            g_platform.setClipboardText(g_platform.userData, s.text!.Substring(lo, hi - lo));
-        }
-
-        // ── Focus helpers ─────────────────────────────────────────────────
-
-        private static void Focus(Clay_TextInputState s)
-        {
-            if (g_focused != null && !ReferenceEquals(g_focused, s))
+            int rem = s.Cfg.MaxLength - RuneCount(s.Text ?? "", s.TextLen);
+            if (rem <= 0) return;
+            int cp = 0, i = 0;
+            while (i < strLen && cp < rem)
             {
-                g_focused.focused = false;
-                g_focused.selectionAnchor = -1;
+                i = Utf16Next(str, i, strLen);
+                cp++;
             }
-            s.focused = true;
-            s.cursorBlinkTimer = 0.0;
-            s.cursorVisible = true;
-            g_focused = s;
+            strLen = i;
         }
+        if (strLen <= 0) return;
 
-        private static void Unfocus(Clay_TextInputState s)
+        // Enforce the character cap (bufferSize > 0 → static mode).
+        if (s.BufferSize > 0)
         {
-            s.focused = false;
-            s.selectionAnchor = -1;
-            s._dragSelecting = false;
-            if (ReferenceEquals(g_focused, s)) g_focused = null;
+            int rem = s.BufferSize - s.TextLen;
+            if (rem <= 0) return;
+            if (strLen > rem) strLen = rem;
+            // Never split a surrogate pair.
+            if (strLen > 0 && strLen < str.Length && char.IsLowSurrogate(str[strLen])) strLen--;
+            if (strLen <= 0) return;
         }
 
-        private static void ShiftAnchor(Clay_TextInputState s, bool shift)
+        var current = s.Text ?? "";
+        s.Text = current.Substring(0, s.CursorPos) + str.Substring(0, strLen) + current.Substring(s.CursorPos);
+        s.CursorPos += strLen;
+
+        if (s.Cfg.OnChanged != null)
+            s.Cfg.OnChanged(s.Text, s.TextLen, s.Cfg.ChangedUserData);
+    }
+
+    private static void DeleteRange(TextInputState s, int lo, int hi)
+    {
+        var t = s.Text ?? "";
+        if (lo < 0) lo = 0;
+        if (hi > t.Length) hi = t.Length;
+        if (lo >= hi) return;
+
+        s.Text = t.Substring(0, lo) + t.Substring(hi);
+        if (s.CursorPos > hi) s.CursorPos -= hi - lo;
+        else if (s.CursorPos > lo) s.CursorPos = lo;
+        s.SelectionAnchor = -1;
+    }
+
+    private static void DeleteNotify(TextInputState s, int lo, int hi)
+    {
+        int before = s.TextLen;
+        DeleteRange(s, lo, hi);
+        if (s.TextLen != before && s.Cfg.OnChanged != null)
+            s.Cfg.OnChanged(s.Text!, s.TextLen, s.Cfg.ChangedUserData);
+    }
+
+    private static void CopySelection(TextInputState s)
+    {
+        if (_platform.SetClipboardText == null) return;
+        if (s.SelectionAnchor < 0 || s.SelectionAnchor == s.CursorPos) return;
+        int lo = Math.Min(s.CursorPos, s.SelectionAnchor);
+        int hi = Math.Max(s.CursorPos, s.SelectionAnchor);
+        _platform.SetClipboardText(_platform.UserData, s.Text!.Substring(lo, hi - lo));
+    }
+
+    // ── Focus helpers ─────────────────────────────────────────────────
+
+    private static void Focus(TextInputState s)
+    {
+        if (_focused != null && !ReferenceEquals(_focused, s))
         {
-            if (shift && s.selectionAnchor < 0) s.selectionAnchor = s.cursorPos;
-            else if (!shift) s.selectionAnchor = -1;
+            _focused.Focused = false;
+            _focused.SelectionAnchor = -1;
         }
+        s.Focused = true;
+        s.CursorBlinkTimer = 0.0;
+        s.CursorVisible = true;
+        _focused = s;
+    }
 
-        // ── UTF-16 / text helpers ─────────────────────────────────────────
+    private static void Unfocus(TextInputState s)
+    {
+        s.Focused = false;
+        s.SelectionAnchor = -1;
+        s.DragSelecting = false;
+        if (ReferenceEquals(_focused, s)) _focused = null;
+    }
 
-        private static int Utf16Next(string t, int pos, int len)
+    private static void ShiftAnchor(TextInputState s, bool shift)
+    {
+        if (shift && s.SelectionAnchor < 0) s.SelectionAnchor = s.CursorPos;
+        else if (!shift) s.SelectionAnchor = -1;
+    }
+
+    // ── UTF-16 / text helpers ─────────────────────────────────────────
+
+    private static int Utf16Next(string t, int pos, int len)
+    {
+        if (pos >= len) return len;
+        pos++;
+        if (pos < len && char.IsLowSurrogate(t[pos])) pos++;
+        return pos;
+    }
+
+    private static int Utf16Prev(string t, int pos)
+    {
+        if (pos <= 0) return 0;
+        pos--;
+        if (pos > 0 && char.IsLowSurrogate(t[pos]) && char.IsHighSurrogate(t[pos - 1])) pos--;
+        return pos;
+    }
+
+    private static int RuneCount(string t, int charLen)
+    {
+        int n = 0;
+        for (int i = 0; i < charLen; )
         {
-            if (pos >= len) return len;
-            pos++;
-            if (pos < len && char.IsLowSurrogate(t[pos])) pos++;
-            return pos;
+            i = Utf16Next(t, i, charLen);
+            n++;
         }
+        return n;
+    }
 
-        private static int Utf16Prev(string t, int pos)
+    private static int WordLeft(string t, int pos)
+    {
+        while (pos > 0 && !char.IsLetterOrDigit(t[pos - 1])) pos--;
+        while (pos > 0 && char.IsLetterOrDigit(t[pos - 1])) pos--;
+        return pos;
+    }
+
+    private static int WordRight(string t, int pos, int len)
+    {
+        while (pos < len && !char.IsLetterOrDigit(t[pos])) pos++;
+        while (pos < len && char.IsLetterOrDigit(t[pos])) pos++;
+        return pos;
+    }
+
+    // ── Display / measurement ─────────────────────────────────────────
+
+    private static float MeasureWidth(StringSegment text, TextInputConfig cfg)
+    {
+        if (Clay.SMeasureText == null)
         {
-            if (pos <= 0) return 0;
-            pos--;
-            if (pos > 0 && char.IsLowSurrogate(t[pos]) && char.IsHighSurrogate(t[pos - 1])) pos--;
-            return pos;
+            Clay.GetCurrentContext()?.Error(
+                Clay.ErrorType.TextMeasurementFunctionNotProvided,
+                "Clay's MeasureText function is null. Call Clay.SetMeasureTextFunction() before using ClayTextInput.");
+            return 0f;
         }
+        return Clay.SMeasureText(text, cfg.TextConfig, Clay.GetCurrentContext()?.MeasureTextUserData).Width;
+    }
 
-        private static int RuneCount(string t, int charLen)
+    private static string DisplayString(TextInputState s, TextInputConfig cfg)
+    {
+        var t = s.Text ?? "";
+        if (cfg.PasswordMode)
         {
-            int n = 0;
-            for (int i = 0; i < charLen; )
-            {
-                i = Utf16Next(t, i, charLen);
-                n++;
-            }
-            return n;
+            s.CalcText = new string('*', RuneCount(t, t.Length));
+            return s.CalcText;
         }
+        s.CalcText = t;
+        return s.CalcText;
+    }
 
-        private static int WordLeft(string t, int pos)
+    private static float MeasureTo(TextInputState s, TextInputConfig cfg, int charPos)
+    {
+        var t = s.Text ?? "";
+        if (charPos < 0) charPos = 0;
+        if (charPos > t.Length) charPos = t.Length;
+
+        if (cfg.PasswordMode)
         {
-            while (pos > 0 && !char.IsLetterOrDigit(t[pos - 1])) pos--;
-            while (pos > 0 && char.IsLetterOrDigit(t[pos - 1])) pos--;
-            return pos;
+            int dispLen = RuneCount(t, charPos);
+            return MeasureWidth(new StringSegment(new string('*', dispLen)), cfg);
         }
+        return MeasureWidth(new StringSegment(t, 0, charPos), cfg);
+    }
 
-        private static int WordRight(string t, int pos, int len)
+    private static int ByteAtX(TextInputState s, TextInputConfig cfg, float x)
+    {
+        var t = s.Text ?? "";
+        if (t.Length <= 0 || x <= 0f) return 0;
+
+        float totalWidth = MeasureTo(s, cfg, t.Length);
+        if (x >= totalWidth) return t.Length;
+
+        int prev = 0;
+        while (prev < t.Length)
         {
-            while (pos < len && !char.IsLetterOrDigit(t[pos])) pos++;
-            while (pos < len && char.IsLetterOrDigit(t[pos])) pos++;
-            return pos;
+            int next = Utf16Next(t, prev, t.Length);
+            float prevWidth = MeasureTo(s, cfg, prev);
+            float nextWidth = MeasureTo(s, cfg, next);
+            float mid = (prevWidth + nextWidth) * 0.5f;
+            if (x < mid) return prev;
+            prev = next;
         }
+        return t.Length;
+    }
 
-        // ── Display / measurement ─────────────────────────────────────────
-
-        private static float MeasureWidth(StringSegment text, Clay_TextInputConfig cfg)
+    private static bool ByteAtXIfInBounds(TextInputState s, TextInputConfig cfg, float x, out int outCharPos)
+    {
+        var t = s.Text ?? "";
+        float totalWidth = MeasureTo(s, cfg, t.Length);
+        if (x < 0f || x > totalWidth)
         {
-            if (Clay.s_measureText == null)
-            {
-                Clay.GetCurrentContext()?.Error(
-                    Clay_ErrorType.CLAY_ERROR_TYPE_TEXT_MEASUREMENT_FUNCTION_NOT_PROVIDED,
-                    "Clay's MeasureText function is null. Call Clay.SetMeasureTextFunction() before using ClayTextInput.");
-                return 0f;
-            }
-            return Clay.s_measureText(text, cfg.textConfig, Clay.GetCurrentContext()?.measureTextUserData).width;
+            outCharPos = 0;
+            return false;
         }
-
-        private static string DisplayString(Clay_TextInputState s, Clay_TextInputConfig cfg)
-        {
-            var t = s.text ?? "";
-            if (cfg.passwordMode)
-            {
-                s._calcText = new string('*', RuneCount(t, t.Length));
-                return s._calcText;
-            }
-            s._calcText = t;
-            return s._calcText;
-        }
-
-        private static float MeasureTo(Clay_TextInputState s, Clay_TextInputConfig cfg, int charPos)
-        {
-            var t = s.text ?? "";
-            if (charPos < 0) charPos = 0;
-            if (charPos > t.Length) charPos = t.Length;
-
-            if (cfg.passwordMode)
-            {
-                int dispLen = RuneCount(t, charPos);
-                return MeasureWidth(new StringSegment(new string('*', dispLen)), cfg);
-            }
-            return MeasureWidth(new StringSegment(t, 0, charPos), cfg);
-        }
-
-        private static int ByteAtX(Clay_TextInputState s, Clay_TextInputConfig cfg, float x)
-        {
-            var t = s.text ?? "";
-            if (t.Length <= 0 || x <= 0f) return 0;
-
-            float totalWidth = MeasureTo(s, cfg, t.Length);
-            if (x >= totalWidth) return t.Length;
-
-            int prev = 0;
-            while (prev < t.Length)
-            {
-                int next = Utf16Next(t, prev, t.Length);
-                float prevWidth = MeasureTo(s, cfg, prev);
-                float nextWidth = MeasureTo(s, cfg, next);
-                float mid = (prevWidth + nextWidth) * 0.5f;
-                if (x < mid) return prev;
-                prev = next;
-            }
-            return t.Length;
-        }
-
-        private static bool ByteAtXIfInBounds(Clay_TextInputState s, Clay_TextInputConfig cfg, float x, out int outCharPos)
-        {
-            var t = s.text ?? "";
-            float totalWidth = MeasureTo(s, cfg, t.Length);
-            if (x < 0f || x > totalWidth)
-            {
-                outCharPos = 0;
-                return false;
-            }
-            outCharPos = ByteAtX(s, cfg, x);
-            return true;
-        }
+        outCharPos = ByteAtX(s, cfg, x);
+        return true;
     }
 }

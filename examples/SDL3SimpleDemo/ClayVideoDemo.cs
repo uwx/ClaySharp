@@ -3,20 +3,20 @@ using ClaySharp.Plugin.TextInput;
 
 namespace ClaySharp.Examples.SDL3;
 
-// Port of clay/examples/shared-layouts/clay-video-demo.c. The C `frameArena` (used to
+// Port of clay/examples/shared-Layouts/clay-video-demo.c. The C `frameArena` (used to
 // allocate SidebarClickData with a pointer to the selected index) is unnecessary in C# —
 // the OnHover callback closes over the data directly.
 public sealed class ClayVideoDemo_Data
 {
     public int selectedDocumentIndex;
     public float yOffset;
-    public Clay_TextInputState textInput = null!;
+    public ClayTextInput.TextInputState textInput = null!;
 }
 
 public static class ClayVideoDemo
 {
     public const int FONT_ID_BODY_16 = 0;
-    public static readonly Clay_Color COLOR_WHITE = new Clay_Color(255, 255, 255, 255);
+    public static readonly Clay.Color COLOR_WHITE = new Clay.Color(255, 255, 255, 255);
 
     private struct Document
     {
@@ -28,34 +28,34 @@ public static class ClayVideoDemo
 
     private static void RenderHeaderButton(string text)
     {
-        using (Clay.AutoId(new Clay_ElementDeclaration
+        using (Clay.AutoId(new Clay.ElementDeclaration
         {
-            layout = new Clay_LayoutConfig { padding = new Clay_Padding { left = 16, right = 16, top = 8, bottom = 8 } },
-            backgroundColor = new Clay_Color(140, 140, 140, 255),
-            cornerRadius = Clay.CornerRadius(5),
+            Layout = new Clay.LayoutConfig { Padding = new Clay.Padding { Left = 16, Right = 16, Top = 8, Bottom = 8 } },
+            BackgroundColor = new Clay.Color(140, 140, 140, 255),
+            CornerRadius = Clay.CornerRadius(5),
         }))
         {
-            Clay.Text(text, new Clay_TextElementConfig
+            Clay.Text(text, new Clay.TextElementConfig
             {
-                fontId = FONT_ID_BODY_16,
-                fontSize = 16,
-                textColor = new Clay_Color(255, 255, 255, 255),
+                FontId = FONT_ID_BODY_16,
+                FontSize = 16,
+                TextColor = new Clay.Color(255, 255, 255, 255),
             });
         }
     }
 
     private static void RenderDropdownMenuItem(string text)
     {
-        using (Clay.AutoId(new Clay_ElementDeclaration
+        using (Clay.AutoId(new Clay.ElementDeclaration
         {
-            layout = new Clay_LayoutConfig { padding = Clay.PaddingAll(16) },
+            Layout = new Clay.LayoutConfig { Padding = Clay.PaddingAll(16) },
         }))
         {
-            Clay.Text(text, new Clay_TextElementConfig
+            Clay.Text(text, new Clay.TextElementConfig
             {
-                fontId = FONT_ID_BODY_16,
-                fontSize = 16,
-                textColor = new Clay_Color(255, 255, 255, 255),
+                FontId = FONT_ID_BODY_16,
+                FontSize = 16,
+                TextColor = new Clay.Color(255, 255, 255, 255),
             });
         }
     }
@@ -130,72 +130,72 @@ public static class ClayVideoDemo
         };
     }
 
-    public static Clay_RenderCommandArray CreateLayout(ClayVideoDemo_Data data)
+    public static Clay.RenderCommandArray CreateLayout(ClayVideoDemo_Data data)
     {
         Clay.BeginLayout();
 
-        Clay_Sizing layoutExpand = new Clay_Sizing { width = Clay.SizingGrow(0), height = Clay.SizingGrow(0) };
-        Clay_Color contentBackgroundColor = new Clay_Color(90, 90, 90, 255);
+        Clay.Sizing LayoutExpand = new Clay.Sizing { Width = Clay.SizingGrow(0), Height = Clay.SizingGrow(0) };
+        Clay.Color contentBackgroundColor = new Clay.Color(90, 90, 90, 255);
 
-        Clay_TextInputConfig textInputConfig = new Clay_TextInputConfig
+        ClayTextInput.TextInputConfig textInputConfig = new ClayTextInput.TextInputConfig
         {
-            sizing = new Clay_Sizing { width = Clay.SizingFixed(260), height = Clay.SizingFixed(40) },
-            padding = Clay.PaddingAll(8),
-            textConfig = new Clay_TextElementConfig
+            Sizing = new Clay.Sizing { Width = Clay.SizingFixed(260), Height = Clay.SizingFixed(40) },
+            Padding = Clay.PaddingAll(8),
+            TextConfig = new Clay.TextElementConfig
             {
-                fontId = FONT_ID_BODY_16,
-                fontSize = 16,
-                textColor = COLOR_WHITE,
+                FontId = FONT_ID_BODY_16,
+                FontSize = 16,
+                TextColor = COLOR_WHITE,
             },
-            placeholder = "Search…",
-            colorBackground = new Clay_Color(50, 50, 55, 255),
-            colorBorder = new Clay_Color(90, 90, 95, 255),
-            colorBorderFocus = new Clay_Color(100, 160, 255, 255),
-            colorPlaceholder = new Clay_Color(150, 150, 150, 255),
-            colorSelection = new Clay_Color(60, 120, 210, 160),
-            colorCursor = new Clay_Color(220, 220, 220, 255),
-            cornerRadius = Clay.CornerRadius(6),
-            borderWidth = Clay.BorderAll(1),
+            Placeholder = "Search…",
+            ColorBackground = new Clay.Color(50, 50, 55, 255),
+            ColorBorder = new Clay.Color(90, 90, 95, 255),
+            ColorBorderFocus = new Clay.Color(100, 160, 255, 255),
+            ColorPlaceholder = new Clay.Color(150, 150, 150, 255),
+            ColorSelection = new Clay.Color(60, 120, 210, 160),
+            ColorCursor = new Clay.Color(220, 220, 220, 255),
+            CornerRadius = Clay.CornerRadius(6),
+            BorderWidth = Clay.BorderAll(1),
         };
 
-        using (Clay.Element(Clay.Id("OuterContainer"), new Clay_ElementDeclaration
+        using (Clay.Element(Clay.Id("OuterContainer"), new Clay.ElementDeclaration
         {
-            backgroundColor = new Clay_Color(43, 41, 51, 255),
-            layout = new Clay_LayoutConfig
+            BackgroundColor = new Clay.Color(43, 41, 51, 255),
+            Layout = new Clay.LayoutConfig
             {
-                layoutDirection = Clay_LayoutDirection.CLAY_TOP_TO_BOTTOM,
-                sizing = layoutExpand,
-                padding = Clay.PaddingAll(16),
-                childGap = 16,
+                LayoutDirection = Clay.LayoutDirection.TopToBottom,
+                Sizing = LayoutExpand,
+                Padding = Clay.PaddingAll(16),
+                ChildGap = 16,
             },
         }))
         {
             // Header bar.
-            using (Clay.Element(Clay.Id("HeaderBar"), new Clay_ElementDeclaration
+            using (Clay.Element(Clay.Id("HeaderBar"), new Clay.ElementDeclaration
             {
-                layout = new Clay_LayoutConfig
+                Layout = new Clay.LayoutConfig
                 {
-                    sizing = new Clay_Sizing { height = Clay.SizingFixed(60), width = Clay.SizingGrow(0) },
-                    padding = new Clay_Padding { left = 16, right = 16, top = 0, bottom = 0 },
-                    childGap = 16,
-                    childAlignment = new Clay_ChildAlignment { y = Clay_LayoutAlignmentY.CLAY_ALIGN_Y_CENTER },
+                    Sizing = new Clay.Sizing { Height = Clay.SizingFixed(60), Width = Clay.SizingGrow(0) },
+                    Padding = new Clay.Padding { Left = 16, Right = 16, Top = 0, Bottom = 0 },
+                    ChildGap = 16,
+                    ChildAlignment = new Clay.ChildAlignment { Y = Clay.LayoutAlignmentY.Center },
                 },
-                backgroundColor = contentBackgroundColor,
-                cornerRadius = Clay.CornerRadius(8),
+                BackgroundColor = contentBackgroundColor,
+                CornerRadius = Clay.CornerRadius(8),
             }))
             {
-                using (Clay.Element(Clay.Id("FileButton"), new Clay_ElementDeclaration
+                using (Clay.Element(Clay.Id("FileButton"), new Clay.ElementDeclaration
                 {
-                    layout = new Clay_LayoutConfig { padding = new Clay_Padding { left = 16, right = 16, top = 8, bottom = 8 } },
-                    backgroundColor = new Clay_Color(140, 140, 140, 255),
-                    cornerRadius = Clay.CornerRadius(5),
+                    Layout = new Clay.LayoutConfig { Padding = new Clay.Padding { Left = 16, Right = 16, Top = 8, Bottom = 8 } },
+                    BackgroundColor = new Clay.Color(140, 140, 140, 255),
+                    CornerRadius = Clay.CornerRadius(5),
                 }))
                 {
-                    Clay.Text("File", new Clay_TextElementConfig
+                    Clay.Text("File", new Clay.TextElementConfig
                     {
-                        fontId = FONT_ID_BODY_16,
-                        fontSize = 16,
-                        textColor = new Clay_Color(255, 255, 255, 255),
+                        FontId = FONT_ID_BODY_16,
+                        FontSize = 16,
+                        TextColor = new Clay.Color(255, 255, 255, 255),
                     });
 
                     bool fileMenuVisible =
@@ -204,25 +204,25 @@ public static class ClayVideoDemo
 
                     if (fileMenuVisible)
                     {
-                        using (Clay.Element(Clay.Id("FileMenu"), new Clay_ElementDeclaration
+                        using (Clay.Element(Clay.Id("FileMenu"), new Clay.ElementDeclaration
                         {
-                            floating = new Clay_FloatingElementConfig
+                            Floating = new Clay.FloatingElementConfig
                             {
-                                attachTo = Clay_FloatingAttachToElement.CLAY_ATTACH_TO_PARENT,
-                                attachPoints = new Clay_FloatingAttachPoints { parent = Clay_FloatingAttachPointType.CLAY_ATTACH_POINT_LEFT_BOTTOM },
+                                AttachTo = Clay.FloatingAttachToElement.Parent,
+                                AttachPoints = new Clay.FloatingAttachPoints { Parent = Clay.FloatingAttachPointType.LeftBottom },
                             },
-                            layout = new Clay_LayoutConfig { padding = new Clay_Padding { left = 0, right = 0, top = 8, bottom = 8 } },
+                            Layout = new Clay.LayoutConfig { Padding = new Clay.Padding { Left = 0, Right = 0, Top = 8, Bottom = 8 } },
                         }))
                         {
-                            using (Clay.AutoId(new Clay_ElementDeclaration
+                            using (Clay.AutoId(new Clay.ElementDeclaration
                             {
-                                layout = new Clay_LayoutConfig
+                                Layout = new Clay.LayoutConfig
                                 {
-                                    layoutDirection = Clay_LayoutDirection.CLAY_TOP_TO_BOTTOM,
-                                    sizing = new Clay_Sizing { width = Clay.SizingFixed(200) },
+                                    LayoutDirection = Clay.LayoutDirection.TopToBottom,
+                                    Sizing = new Clay.Sizing { Width = Clay.SizingFixed(200) },
                                 },
-                                backgroundColor = new Clay_Color(40, 40, 40, 255),
-                                cornerRadius = Clay.CornerRadius(8),
+                                BackgroundColor = new Clay.Color(40, 40, 40, 255),
+                                CornerRadius = Clay.CornerRadius(8),
                             }))
                             {
                                 RenderDropdownMenuItem("New");
@@ -234,7 +234,7 @@ public static class ClayVideoDemo
                 }
 
                 RenderHeaderButton("Edit");
-                using (Clay.AutoId(new Clay_ElementDeclaration { layout = new Clay_LayoutConfig { sizing = new Clay_Sizing { width = Clay.SizingGrow(0) } } })) { }
+                using (Clay.AutoId(new Clay.ElementDeclaration { Layout = new Clay.LayoutConfig { Sizing = new Clay.Sizing { Width = Clay.SizingGrow(0) } } })) { }
                 ClayTextInput.TextInput(data.textInput, textInputConfig);
                 RenderHeaderButton("Upload");
                 RenderHeaderButton("Media");
@@ -242,112 +242,112 @@ public static class ClayVideoDemo
             }
 
             // Lower content: sidebar + scrolling main content.
-            using (Clay.Element(Clay.Id("LowerContent"), new Clay_ElementDeclaration
+            using (Clay.Element(Clay.Id("LowerContent"), new Clay.ElementDeclaration
             {
-                layout = new Clay_LayoutConfig { sizing = layoutExpand, childGap = 16 },
+                Layout = new Clay.LayoutConfig { Sizing = LayoutExpand, ChildGap = 16 },
             }))
             {
-                using (Clay.Element(Clay.Id("Sidebar"), new Clay_ElementDeclaration
+                using (Clay.Element(Clay.Id("Sidebar"), new Clay.ElementDeclaration
                 {
-                    backgroundColor = contentBackgroundColor,
-                    layout = new Clay_LayoutConfig
+                    BackgroundColor = contentBackgroundColor,
+                    Layout = new Clay.LayoutConfig
                     {
-                        layoutDirection = Clay_LayoutDirection.CLAY_TOP_TO_BOTTOM,
-                        padding = Clay.PaddingAll(16),
-                        childGap = 8,
-                        sizing = new Clay_Sizing { width = Clay.SizingFixed(250), height = Clay.SizingGrow(0) },
+                        LayoutDirection = Clay.LayoutDirection.TopToBottom,
+                        Padding = Clay.PaddingAll(16),
+                        ChildGap = 8,
+                        Sizing = new Clay.Sizing { Width = Clay.SizingFixed(250), Height = Clay.SizingGrow(0) },
                     },
                 }))
                 {
                     for (int i = 0; i < documents.Length; i++)
                     {
                         Document document = documents[i];
-                        Clay_LayoutConfig sidebarButtonLayout = new Clay_LayoutConfig
+                        Clay.LayoutConfig sidebarButtonLayout = new Clay.LayoutConfig
                         {
-                            sizing = new Clay_Sizing { width = Clay.SizingGrow(0) },
-                            padding = Clay.PaddingAll(16),
+                            Sizing = new Clay.Sizing { Width = Clay.SizingGrow(0) },
+                            Padding = Clay.PaddingAll(16),
                         };
 
                         if (i == data.selectedDocumentIndex)
                         {
-                            using (Clay.AutoId(new Clay_ElementDeclaration
+                            using (Clay.AutoId(new Clay.ElementDeclaration
                             {
-                                layout = sidebarButtonLayout,
-                                backgroundColor = new Clay_Color(120, 120, 120, 255),
-                                cornerRadius = Clay.CornerRadius(8),
+                                Layout = sidebarButtonLayout,
+                                BackgroundColor = new Clay.Color(120, 120, 120, 255),
+                                CornerRadius = Clay.CornerRadius(8),
                             }))
                             {
-                                Clay.Text(document.title, new Clay_TextElementConfig
+                                Clay.Text(document.title, new Clay.TextElementConfig
                                 {
-                                    fontId = FONT_ID_BODY_16,
-                                    fontSize = 20,
-                                    textColor = new Clay_Color(255, 255, 255, 255),
+                                    FontId = FONT_ID_BODY_16,
+                                    FontSize = 20,
+                                    TextColor = new Clay.Color(255, 255, 255, 255),
                                 });
                             }
                         }
                         else
                         {
                             int requestedDocumentIndex = i;
-                            using (Clay.AutoId(() => new Clay_ElementDeclaration
+                            using (Clay.AutoId(() => new Clay.ElementDeclaration
                             {
-                                layout = sidebarButtonLayout,
-                                backgroundColor = new Clay_Color(120, 120, 120, Clay.Hovered() ? 120 : 0),
-                                cornerRadius = Clay.CornerRadius(8),
+                                Layout = sidebarButtonLayout,
+                                BackgroundColor = new Clay.Color(120, 120, 120, Clay.Hovered() ? 120 : 0),
+                                CornerRadius = Clay.CornerRadius(8),
                             }))
                             {
-                                Clay.OnHover((Clay_ElementId elementId, Clay_PointerData pointerData, object? userData) =>
+                                Clay.OnHover((Clay.ElementId elementId, Clay.PointerData pointerData, object? userData) =>
                                 {
-                                    if (pointerData.state == Clay_PointerDataInteractionState.CLAY_POINTER_DATA_PRESSED_THIS_FRAME)
+                                    if (pointerData.State == Clay.PointerDataInteractionState.PressedThisFrame)
                                     {
                                         data.selectedDocumentIndex = requestedDocumentIndex;
                                     }
                                 }, null);
 
-                                Clay.Text(document.title, new Clay_TextElementConfig
+                                Clay.Text(document.title, new Clay.TextElementConfig
                                 {
-                                    fontId = FONT_ID_BODY_16,
-                                    fontSize = 20,
-                                    textColor = new Clay_Color(255, 255, 255, 255),
+                                    FontId = FONT_ID_BODY_16,
+                                    FontSize = 20,
+                                    TextColor = new Clay.Color(255, 255, 255, 255),
                                 });
                             }
                         }
                     }
                 }
 
-                using (Clay.Element(Clay.Id("MainContent"), () => new Clay_ElementDeclaration
+                using (Clay.Element(Clay.Id("MainContent"), () => new Clay.ElementDeclaration
                 {
-                    backgroundColor = contentBackgroundColor,
-                    clip = new Clay_ClipElementConfig { vertical = true, childOffset = Clay.GetScrollOffset() },
-                    layout = new Clay_LayoutConfig
+                    BackgroundColor = contentBackgroundColor,
+                    Clip = new Clay.ClipElementConfig { Vertical = true, ChildOffset = Clay.GetScrollOffset() },
+                    Layout = new Clay.LayoutConfig
                     {
-                        layoutDirection = Clay_LayoutDirection.CLAY_TOP_TO_BOTTOM,
-                        childGap = 16,
-                        padding = Clay.PaddingAll(16),
-                        sizing = layoutExpand,
+                        LayoutDirection = Clay.LayoutDirection.TopToBottom,
+                        ChildGap = 16,
+                        Padding = Clay.PaddingAll(16),
+                        Sizing = LayoutExpand,
                     },
                 }))
                 {
                     Document selectedDocument = documents[data.selectedDocumentIndex];
-                    Clay.Text(selectedDocument.title, new Clay_TextElementConfig
+                    Clay.Text(selectedDocument.title, new Clay.TextElementConfig
                     {
-                        fontId = FONT_ID_BODY_16,
-                        fontSize = 24,
-                        textColor = COLOR_WHITE,
+                        FontId = FONT_ID_BODY_16,
+                        FontSize = 24,
+                        TextColor = COLOR_WHITE,
                     });
-                    Clay.Text(selectedDocument.contents, new Clay_TextElementConfig
+                    Clay.Text(selectedDocument.contents, new Clay.TextElementConfig
                     {
-                        fontId = FONT_ID_BODY_16,
-                        fontSize = 24,
-                        textColor = COLOR_WHITE,
+                        FontId = FONT_ID_BODY_16,
+                        FontSize = 24,
+                        TextColor = COLOR_WHITE,
                     });
                 }
             }
         }
 
-        Clay_RenderCommandArray renderCommands = Clay.EndLayout(0);
-        for (int i = 0; i < renderCommands.length; i++)
+        Clay.RenderCommandArray renderCommands = Clay.EndLayout(0);
+        for (int i = 0; i < renderCommands.Length; i++)
         {
-            renderCommands.Get(i).boundingBox.y += data.yOffset;
+            renderCommands.Get(i).BoundingBox.Y += data.yOffset;
         }
         return renderCommands;
     }

@@ -3,6 +3,8 @@ using System.IO;
 using System.Numerics;
 using ClaySharp;
 using ClaySharp.Examples.SDL3;
+using ClaySharp.Plugin.TextInput;
+using ClaySharp.Plugin.TextInput.FNA;
 using ClaySharp.Renderer.FNA;
 using FontStashSharp;
 using Microsoft.Xna.Framework;
@@ -21,7 +23,7 @@ public class Game1 : Game
     private SpriteBatch _spriteBatch = null!;
     private FontSystem _fontSystem = null!;
     private Texture2D _sampleImage = null!;
-    private FNA_Clay.Clay_FNARendererData _rendererData;
+    private FNA_Clay.FnaRendererData _rendererData;
     private ClayVideoDemo_Data _demoData = null!;
 
     private bool _showDemo = true;
@@ -43,14 +45,14 @@ public class Game1 : Game
 
     private static string Resource(string name) => Path.Combine(AppContext.BaseDirectory, "resources", name);
 
-    private static Clay_Dimensions MeasureText(Microsoft.Extensions.Primitives.StringSegment text, Clay_TextElementConfig config, object? userData)
+    private static Clay.Dimensions MeasureText(Microsoft.Extensions.Primitives.StringSegment text, Clay.TextElementConfig config, object? userData)
     {
         var fontSystem = (FontSystem)userData!;
-        Bounds bounds = fontSystem.GetFont(config.fontSize).TextBounds(text.AsSpan(), Vector2.Zero);
-        return new Clay_Dimensions(bounds.X2 - bounds.X, bounds.Y2 - bounds.Y);
+        Bounds bounds = fontSystem.GetFont(config.FontSize).TextBounds(text.AsSpan(), Vector2.Zero);
+        return new Clay.Dimensions(bounds.X2 - bounds.X, bounds.Y2 - bounds.Y);
     }
 
-    private static void HandleClayErrors(Clay_ErrorData errorData) => Console.WriteLine(errorData.errorText);
+    private static void HandleClayErrors(Clay.ErrorData errorData) => Console.WriteLine(errorData.ErrorText);
 
     protected override void LoadContent()
     {
@@ -62,18 +64,22 @@ public class Game1 : Game
         using Stream stream = File.OpenRead(Resource("sample.png"));
         _sampleImage = Texture2D.FromStream(GraphicsDevice, stream);
 
-        _rendererData = new FNA_Clay.Clay_FNARendererData
+        _rendererData = new FNA_Clay.FnaRendererData
         {
-            graphicsDevice = GraphicsDevice,
-            spriteBatch = _spriteBatch,
-            fonts = new[] { _fontSystem },
+            GraphicsDevice = GraphicsDevice,
+            SpriteBatch = _spriteBatch,
+            Fonts = new[] { _fontSystem },
         };
 
         Clay.Initialize(
-            new Clay_Dimensions(_graphics.PreferredBackBufferWidth, _graphics.PreferredBackBufferHeight),
-            new Clay_ErrorHandler { errorHandlerFunction = HandleClayErrors });
+            new Clay.Dimensions(_graphics.PreferredBackBufferWidth, _graphics.PreferredBackBufferHeight),
+            new Clay.ErrorHandler { ErrorHandlerFunction = HandleClayErrors });
         Clay.SetMeasureTextFunction(MeasureText, _fontSystem);
 
+        ClayTextInput.SetPlatform(ClayTextInputFna.Platform());
+        ClayTextInputFna.HookEvents();
+        global::SDL3.SDL.SDL_StartTextInput(Window.Handle);
+        
         _demoData = ClayVideoDemo.Initialize();
     }
 
@@ -102,7 +108,7 @@ public class Game1 : Game
             _graphics.ApplyChanges();
         }
 
-        Clay.SetLayoutDimensions(new Clay_Dimensions(Window.ClientBounds.Width, Window.ClientBounds.Height));
+        Clay.SetLayoutDimensions(new Clay.Dimensions(Window.ClientBounds.Width, Window.ClientBounds.Height));
 
         MouseState mouse = Mouse.GetState();
         Clay.SetPointerState(new Vector2(mouse.X, mouse.Y), mouse.LeftButton == ButtonState.Pressed);
@@ -120,38 +126,38 @@ public class Game1 : Game
     {
         GraphicsDevice.Clear(new Color(0.2f, 0.2f, 0.25f, 1f));
 
-        Clay_RenderCommandArray renderCommands = _showDemo
+        Clay.RenderCommandArray renderCommands = _showDemo
             ? ClayVideoDemo.CreateLayout(_demoData)
             : CreateImageLayout();
 
-        FNA_Clay.FNA_Clay_RenderClayCommands(_rendererData, renderCommands);
+        FNA_Clay.RenderClayCommands(_rendererData, renderCommands);
 
         base.Draw(gameTime);
     }
 
-    private Clay_RenderCommandArray CreateImageLayout()
+    private Clay.RenderCommandArray CreateImageLayout()
     {
         Clay.BeginLayout();
 
-        Clay_Sizing layoutExpand = new Clay_Sizing { width = Clay.SizingGrow(0), height = Clay.SizingGrow(0) };
+        Clay.Sizing layoutExpand = new Clay.Sizing { Width = Clay.SizingGrow(0), Height = Clay.SizingGrow(0) };
 
-        using (Clay.Element(Clay.Id("OuterContainer"), new Clay_ElementDeclaration
+        using (Clay.Element(Clay.Id("OuterContainer"), new Clay.ElementDeclaration
         {
-            layout = new Clay_LayoutConfig
+            Layout = new Clay.LayoutConfig
             {
-                layoutDirection = Clay_LayoutDirection.CLAY_TOP_TO_BOTTOM,
-                sizing = layoutExpand,
-                padding = Clay.PaddingAll(16),
-                childGap = 16,
+                LayoutDirection = Clay.LayoutDirection.TopToBottom,
+                Sizing = layoutExpand,
+                Padding = Clay.PaddingAll(16),
+                ChildGap = 16,
             },
         }))
         {
-            using (Clay.Element(Clay.Id("SampleImage"), new Clay_ElementDeclaration
+            using (Clay.Element(Clay.Id("SampleImage"), new Clay.ElementDeclaration
             {
-                layout = new Clay_LayoutConfig { sizing = layoutExpand },
-                cornerRadius = Clay.CornerRadius(32),
-                aspectRatio = new Clay_AspectRatioElementConfig { aspectRatio = 23.0f / 42.0f },
-                image = new Clay_ImageElementConfig { imageData = _sampleImage },
+                Layout = new Clay.LayoutConfig { Sizing = layoutExpand },
+                CornerRadius = Clay.CornerRadius(32),
+                AspectRatio = new Clay.AspectRatioElementConfig { AspectRatio = 23.0f / 42.0f },
+                Image = new Clay.ImageElementConfig { ImageData = _sampleImage },
             })) { }
         }
 
