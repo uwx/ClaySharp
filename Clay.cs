@@ -74,7 +74,7 @@ namespace ClaySharp
         public int length => items.length;
         public Clay_ElementId[] internalArray => items.internalArray;
         public Clay_ElementId this[int index] => items.internalArray[index];
-        
+
         public IEnumerator<Clay_ElementId> GetEnumerator() => new ClayArrayEnumerator<Clay_ElementId>(items);
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
@@ -616,7 +616,7 @@ namespace ClaySharp
 
         // Bounds-checked accessor equivalent to the C Clay_RenderCommandArray_Get.
         public ref Clay_RenderCommand Get(int index) => ref items.Get(index);
-        
+
         public IEnumerator<Clay_RenderCommand> GetEnumerator() => new ClayArrayEnumerator<Clay_RenderCommand>(items);
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
@@ -1739,7 +1739,7 @@ namespace ClaySharp
                         transitionData.transitionOut = declaration.transition.exit.setFinalState != null;
                     }
                 }
-                if (!Unsafe.IsNullRef(in transitionData))
+                if (Unsafe.IsNullRef(in transitionData))
                 {
                     transitionData = ref context.transitionDatas.Add(new Clay__TransitionDataInternal
                     {

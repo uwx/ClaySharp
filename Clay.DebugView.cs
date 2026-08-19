@@ -1041,8 +1041,8 @@ public static partial class Clay
                                 Text(__IntToString(floatingConfig.zIndex), infoTextConfig);
                                 // .parentId
                                 Text("Parent", infoTitleConfig);
-                                Clay_LayoutElementHashMapItem? hashItem = __GetHashMapItem(floatingConfig.parentId);
-                                Text(hashItem?.elementId.stringId ?? "", infoTextConfig);
+                                ref Clay_LayoutElementHashMapItem hashItem = ref __GetHashMapItem(floatingConfig.parentId);
+                                Text(!Unsafe.IsNullRef(in hashItem) ? hashItem.elementId.stringId : "", infoTextConfig);
                                 // .attachPoints
                                 Text("Attach Points", infoTitleConfig);
                                 using (AutoId(new Clay_ElementDeclaration { layout = new Clay_LayoutConfig { layoutDirection = Clay_LayoutDirection.CLAY_LEFT_TO_RIGHT } }))
