@@ -798,14 +798,14 @@ public static class ClayTextInput
 
     private static float MeasureWidth(StringSegment text, TextInputConfig cfg)
     {
-        if (Clay.SMeasureText == null)
+        if (Clay.MeasureText == null)
         {
             Clay.GetCurrentContext()?.Error(
                 Clay.ErrorType.TextMeasurementFunctionNotProvided,
                 "Clay's MeasureText function is null. Call Clay.SetMeasureTextFunction() before using ClayTextInput.");
             return 0f;
         }
-        return Clay.SMeasureText(text, cfg.TextConfig, Clay.GetCurrentContext()?.MeasureTextUserData).Width;
+        return Clay.MeasureText(text, cfg.TextConfig, Clay.GetCurrentContext()?.MeasureTextUserData).Width;
     }
 
     private static string DisplayString(TextInputState s, TextInputConfig cfg)
