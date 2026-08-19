@@ -396,6 +396,11 @@ public class FNA_Clay
 
         r.Effect.CurrentTechnique.Passes[0].Apply();
 
+        // Vertex colors are straight (non-premultiplied) RGBA. FNA's BlendState.AlphaBlend
+        // is premultiplied (One, InverseSourceAlpha); use NonPremultiplied instead, and reset it
+        // here because SpriteBatch leaves its own (premultiplied) blend state behind after End().
+        device.BlendState = BlendState.NonPremultiplied;
+
         device.SetVertexBuffer(r.VertexBuffer);
         device.Indices = r.IndexBuffer;
         device.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, r.VertexCount, 0, r.IndexCount / 3);
@@ -430,7 +435,7 @@ public class FNA_Clay
         SamplerState oldSampler = device.SamplerStates[0];
         Rectangle oldScissor = device.ScissorRectangle;
 
-        device.BlendState = BlendState.AlphaBlend;
+        device.BlendState = BlendState.NonPremultiplied;
         device.DepthStencilState = DepthStencilState.None;
         device.SamplerStates[0] = SamplerState.LinearClamp;
         device.RasterizerState = r.RasterizerPlain;
