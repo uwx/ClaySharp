@@ -29,10 +29,12 @@ public class FNA_Clay
         public Func<object, Texture2D?>? textureResolver;
         public ImageRenderHandler? imageRenderer;
         public CustomRenderHandler? customRenderer;
+        public FontGetHandler? fontGetter;
     }
 
     public delegate void ImageRenderHandler(ref Clay_ImageRenderData data);
     public delegate void CustomRenderHandler(ref Clay_CustomRenderData data);
+    public delegate FontSystem FontGetHandler(ref Clay_TextRenderData data, object? userData);
 
     private const int NUM_CIRCLE_SEGMENTS = 16;
     private const int MAX_CIRCLE_SEGMENTS_FILL = 1024; // caps per-command vertex counts (16-bit indices)
@@ -505,7 +507,14 @@ public class FNA_Clay
                     FlushGeometry(device, r);
                     {
                         ref Clay_TextRenderData tc = ref rcmd.renderData.text;
-                        SpriteFontBase font = rendererData.fonts[tc.fontId].GetFont(tc.fontSize);
+                        SpriteFontBase font;
+                        if (rendererData.fonts.Length >= tc.fontId) 
+                            font = rendererData.fonts[tc.fontId].GetFont(tc.fontSize);
+                        else if (rendererData.fontGetter is not null)
+                            font = rendererData.fontGetter.Invoke(ref tc, rcmd.userData).GetFont(tc.fontSize);
+                        else
+                            break; // TODO emit warning, there's no matching font!
+
                         if (!textBatchOpen)
                         {
                             rendererData.spriteBatch.Begin(
