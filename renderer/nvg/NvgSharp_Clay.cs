@@ -211,6 +211,11 @@ public static class Nvg_Clay
 
         Microsoft.Extensions.Primitives.StringSegment contents = tc.StringContents;
 
+        // FontStashSharp's TextBounds returns the glyph's tight bounds relative to the baseline,
+        // so short glyphs (e.g. "x") sit below the line-box top. Offset by the tight bounds so the
+        // drawn text aligns with Clay's bounding box (same fix as the FNA renderer).
+        Bounds bounds = font.TextBounds(contents.AsSpan(), Vector2.Zero);
+
         TextStyle textStyle = TextStyle.None;
         FontSystemEffect effect = FontSystemEffect.None;
         int effectAmount = 0;
@@ -225,8 +230,8 @@ public static class Nvg_Clay
         context.Text(
             font,
             contents.AsSpan(),
-            bb.X,
-            bb.Y - font.LineHeight,
+            bb.X - bounds.X,
+            bb.Y - bounds.Y,
             characterSpacing: tc.LetterSpacing,
             textStyle: textStyle,
             effect: effect,
