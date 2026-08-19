@@ -81,9 +81,9 @@ namespace ClaySharp
     }
 
     // A sized array of Clay_ElementId (returned from Clay.GetPointerOverIds()).
-    public sealed class Clay_ElementIdArray
+    public readonly struct Clay_ElementIdArray : IReadOnlyList<Clay_ElementId>
     {
-        internal ClayArray<Clay_ElementId> items;
+        internal readonly ClayArray<Clay_ElementId> items;
 
         internal Clay_ElementIdArray(ClayArray<Clay_ElementId> items)
         {
@@ -94,6 +94,41 @@ namespace ClaySharp
         public int length => items.length;
         public Clay_ElementId[] internalArray => items.internalArray;
         public Clay_ElementId this[int index] => items.internalArray[index];
+        
+        public IEnumerator<Clay_ElementId> GetEnumerator() => new ClayArrayEnumerator<Clay_ElementId>(items);
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        int IReadOnlyCollection<Clay_ElementId>.Count => items.length;
+    }
+
+    public struct ClayArrayEnumerator<T> : IEnumerator<T>
+    {
+        private int _index = -1;
+        private readonly ClayArray<T> _array;
+
+        internal ClayArrayEnumerator(ClayArray<T> array)
+        {
+            _array = array;
+        }
+
+        public bool MoveNext()
+        {
+            return ++_index < _array.length;
+        }
+
+        public void Reset()
+        {
+            _index = -1;
+        }
+
+        public T Current => _array.internalArray[_index];
+
+        object? IEnumerator.Current => Current;
+
+        public void Dispose()
+        {
+        }
     }
 
     // Controls the "radius", or corner rounding of elements, including rectangles, borders and images.
@@ -585,7 +620,7 @@ namespace ClaySharp
     }
 
     // A sized array of render commands (returned from Clay.EndLayout()).
-    public sealed class Clay_RenderCommandArray
+    public struct Clay_RenderCommandArray : IReadOnlyList<Clay_RenderCommand>
     {
         internal ClayArray<Clay_RenderCommand> items;
 
@@ -601,6 +636,12 @@ namespace ClaySharp
 
         // Bounds-checked accessor equivalent to the C Clay_RenderCommandArray_Get.
         public ref Clay_RenderCommand Get(int index) => ref items.Get(index);
+        
+        public IEnumerator<Clay_RenderCommand> GetEnumerator() => new ClayArrayEnumerator<Clay_RenderCommand>(items);
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        int IReadOnlyCollection<Clay_RenderCommand>.Count => items.length;
     }
 
     // Represents the current state of interaction with clay this frame.
