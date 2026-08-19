@@ -518,18 +518,21 @@ namespace ClaySharp
     // -----------------------------------------
 
     // Data representing the current internal state of a scrolling element.
-    public struct Clay_ScrollContainerData
+    public ref struct Clay_ScrollContainerData
     {
-        private Clay__ScrollContainerDataInternal? internalData;
+        private ref Clay__ScrollContainerDataInternal internalData;
 
-        // Note: in C this is a pointer to the real internal scroll position; mutating it may change the final
-        // layout. In C# it is exposed as a writable property backed by the internal state object.
         public Vector2 scrollPosition
         {
-            get => internalData?.scrollPosition ?? default;
+            get
+            {
+                if (Unsafe.IsNullRef(ref internalData)) return default;
+                return internalData.scrollPosition;
+            }
             set
             {
-                if (internalData != null) internalData.scrollPosition = value;
+                if (Unsafe.IsNullRef(ref internalData)) return;
+                internalData.scrollPosition = value;
             }
         }
 
@@ -538,11 +541,11 @@ namespace ClaySharp
         public Clay_ClipElementConfig config; // The config that was originally passed to the clip element.
         public bool found; // Indicates whether an actual scroll container matched the provided ID.
 
-        internal static Clay_ScrollContainerData Create(Clay__ScrollContainerDataInternal internalData)
+        internal static Clay_ScrollContainerData Create(ref Clay__ScrollContainerDataInternal internalData)
         {
             return new Clay_ScrollContainerData
             {
-                internalData = internalData,
+                internalData = ref internalData,
                 scrollContainerDimensions = new Clay_Dimensions(internalData.boundingBox.width, internalData.boundingBox.height),
                 contentDimensions = internalData.contentSize,
                 config = internalData.layoutElement.config.clip,
@@ -768,9 +771,9 @@ namespace ClaySharp
     }
 
     // Internal state of a scrolling container.
-    internal sealed class Clay__ScrollContainerDataInternal
+    internal struct Clay__ScrollContainerDataInternal
     {
-        public Clay_LayoutElement layoutElement = null!;
+        public Clay_LayoutElement layoutElement;
         public Clay_BoundingBox boundingBox;
         public Clay_Dimensions contentSize;
         public Vector2 scrollOrigin;
@@ -1663,27 +1666,26 @@ namespace ClaySharp
             {
                 context.openClipElementStack.Add((int)openLayoutElement.id);
                 // Retrieve or create cached data to track scroll position across frames.
-                Clay__ScrollContainerDataInternal? scrollOffset = null;
+                ref Clay__ScrollContainerDataInternal scrollOffset = ref Unsafe.NullRef<Clay__ScrollContainerDataInternal>();
                 for (int i = 0; i < context.scrollContainerDatas.length; i++)
                 {
-                    Clay__ScrollContainerDataInternal mapping = context.scrollContainerDatas.internalArray[i];
+                    ref Clay__ScrollContainerDataInternal mapping = ref context.scrollContainerDatas.internalArray[i];
                     if (openLayoutElement.id == mapping.elementId)
                     {
-                        scrollOffset = mapping;
+                        scrollOffset = ref mapping;
                         scrollOffset.layoutElement = openLayoutElement;
                         scrollOffset.openThisFrame = true;
                     }
                 }
-                if (scrollOffset == null)
+                if (Unsafe.IsNullRef(ref scrollOffset))
                 {
-                    scrollOffset = new Clay__ScrollContainerDataInternal
+                    scrollOffset = ref context.scrollContainerDatas.Add(new Clay__ScrollContainerDataInternal
                     {
                         layoutElement = openLayoutElement,
                         scrollOrigin = new Vector2(-1, -1),
                         elementId = openLayoutElement.id,
                         openThisFrame = true,
-                    };
-                    context.scrollContainerDatas.Add(scrollOffset);
+                    });
                 }
                 if (context.externalScrollHandlingEnabled)
                 {
@@ -2644,7 +2646,7 @@ namespace ClaySharp
                     // This will only be run a single time for each element in downwards DFS order.
                     context.treeNodeVisited.internalArray[dfsBuffer.length - 1] = true;
                     Clay_BoundingBox currentElementBoundingBox = new Clay_BoundingBox(currentElementTreeNode.position.X, currentElementTreeNode.position.Y, currentElement.dimensions.width, currentElement.dimensions.height);
-                    Clay__ScrollContainerDataInternal? scrollContainerData = null;
+                    ref Clay__ScrollContainerDataInternal scrollContainerData = ref Unsafe.NullRef<Clay__ScrollContainerDataInternal>();
 
                     if (!currentElement.isTextElement)
                     {
@@ -2691,10 +2693,10 @@ namespace ClaySharp
                             // This linear scan could theoretically be slow under very strange conditions.
                             for (int i = 0; i < context.scrollContainerDatas.length; i++)
                             {
-                                Clay__ScrollContainerDataInternal mapping = context.scrollContainerDatas.internalArray[i];
+                                ref Clay__ScrollContainerDataInternal mapping = ref context.scrollContainerDatas.internalArray[i];
                                 if (mapping.layoutElement == currentElement)
                                 {
-                                    scrollContainerData = mapping;
+                                    scrollContainerData = ref mapping;
                                     mapping.boundingBox = currentElementBoundingBox;
                                     scrollOffset = currentElement.config.clip.childOffset;
                                     if (context.externalScrollHandlingEnabled)
@@ -2911,7 +2913,7 @@ namespace ClaySharp
                         currentElementTreeNode.nextChildOffset.Y += extraSpace;
                     }
 
-                    if (scrollContainerData != null)
+                    if (!Unsafe.IsNullRef(ref scrollContainerData))
                     {
                         scrollContainerData.contentSize = new Clay_Dimensions
                         {
@@ -3201,11 +3203,11 @@ namespace ClaySharp
 
             // Don't apply scroll events to ancestors of the inner element.
             int highestPriorityElementIndex = -1;
-            Clay__ScrollContainerDataInternal? highestPriorityScrollData = null;
+            ref Clay__ScrollContainerDataInternal highestPriorityScrollData = ref Unsafe.NullRef<Clay__ScrollContainerDataInternal>();
 
             for (int i = 0; i < context.scrollContainerDatas.length; i++)
             {
-                Clay__ScrollContainerDataInternal scrollData = context.scrollContainerDatas.internalArray[i];
+                ref Clay__ScrollContainerDataInternal scrollData = ref context.scrollContainerDatas.internalArray[i];
                 if (!scrollData.openThisFrame)
                 {
                     context.scrollContainerDatas.RemoveSwapback(i);
@@ -3262,12 +3264,12 @@ namespace ClaySharp
                     if (scrollData.layoutElement.id == context.pointerOverIds.internalArray[j].id)
                     {
                         highestPriorityElementIndex = j;
-                        highestPriorityScrollData = scrollData;
+                        highestPriorityScrollData = ref scrollData;
                     }
                 }
             }
 
-            if (highestPriorityElementIndex > -1 && highestPriorityScrollData != null)
+            if (highestPriorityElementIndex > -1 && !Unsafe.IsNullRef(ref highestPriorityScrollData))
             {
                 Clay_LayoutElement scrollElement = highestPriorityScrollData.layoutElement;
                 ref Clay_ClipElementConfig clipConfig = ref scrollElement.config.clip;
@@ -3929,7 +3931,7 @@ namespace ClaySharp
             var context = GetCurrentContext()!;
             for (int i = 0; i < context.scrollContainerDatas.length; ++i)
             {
-                Clay__ScrollContainerDataInternal scrollContainerData = context.scrollContainerDatas.internalArray[i];
+                ref Clay__ScrollContainerDataInternal scrollContainerData = ref context.scrollContainerDatas.internalArray[i];
                 if (scrollContainerData.elementId == id.id)
                 {
                     if (scrollContainerData.layoutElement == null)
@@ -3937,7 +3939,7 @@ namespace ClaySharp
                         // This can happen on the first frame before a scroll container is declared.
                         return default;
                     }
-                    return Clay_ScrollContainerData.Create(scrollContainerData);
+                    return Clay_ScrollContainerData.Create(ref scrollContainerData);
                 }
             }
             return default;
