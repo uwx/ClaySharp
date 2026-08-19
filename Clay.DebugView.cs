@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Primitives;
 
 namespace ClaySharp;
@@ -297,8 +298,8 @@ public static partial class Clay
                 }
 
                 context.treeNodeVisited.internalArray[dfsBuffer.length - 1] = true;
-                Clay_LayoutElementHashMapItem? currentElementData = __GetHashMapItem(currentElement.id);
-                bool offscreen = currentElementData != null && __ElementIsOffscreen(in currentElementData.boundingBox);
+                ref Clay_LayoutElementHashMapItem currentElementData = ref __GetHashMapItem(currentElement.id);
+                bool offscreen = !Unsafe.IsNullRef(in currentElementData) && __ElementIsOffscreen(in currentElementData.boundingBox);
                 if (context.debugSelectedElementId == currentElement.id)
                 {
                     layoutData.selectedElementRowIndex = layoutData.rowCount;
@@ -320,7 +321,7 @@ public static partial class Clay
                             border = new Clay_BorderElementConfig { color = Clay__DEBUGVIEW_COLOR_3, width = BorderOutside(1) },
                         }))
                         {
-                            Text((currentElementData != null && currentElementData.debugData.collapsed) ? "+" : "-",
+                            Text((!Unsafe.IsNullRef(in currentElementData) && currentElementData.debugData.collapsed) ? "+" : "-",
                                 new Clay_TextElementConfig { textColor = Clay__DEBUGVIEW_COLOR_4, fontSize = 16 });
                         }
                     }
@@ -344,7 +345,7 @@ public static partial class Clay
                         }
                     }
                     // Collisions and offscreen info
-                    if (currentElementData != null)
+                    if (!Unsafe.IsNullRef(in currentElementData))
                     {
                         if (currentElementData.debugData.collision)
                         {
@@ -369,7 +370,7 @@ public static partial class Clay
                             }
                         }
                     }
-                    if (currentElementData != null && currentElementData.elementId.stringId.Length > 0)
+                    if (!Unsafe.IsNullRef(in currentElementData) && currentElementData.elementId.stringId.Length > 0)
                     {
                         using (AutoId(new Clay_ElementDeclaration { }))
                         {
@@ -484,7 +485,7 @@ public static partial class Clay
                 }
 
                 layoutData.rowCount++;
-                if (!(currentElement.isTextElement || (currentElementData != null && currentElementData.debugData.collapsed)))
+                if (!(currentElement.isTextElement || (!Unsafe.IsNullRef(in currentElementData) && currentElementData.debugData.collapsed)))
                 {
                     for (int i = currentElement.children.length - 1; i >= 0; --i)
                     {
@@ -503,8 +504,8 @@ public static partial class Clay
                 Clay_ElementId elementId = context.pointerOverIds.internalArray[i];
                 if (elementId.baseId == collapseButtonId.baseId)
                 {
-                    Clay_LayoutElementHashMapItem? highlightedItem = __GetHashMapItem(elementId.offset);
-                    if (highlightedItem != null) highlightedItem.debugData.collapsed = !highlightedItem.debugData.collapsed;
+                    ref Clay_LayoutElementHashMapItem highlightedItem = ref __GetHashMapItem(elementId.offset);
+                    if (!Unsafe.IsNullRef(in highlightedItem)) highlightedItem.debugData.collapsed = !highlightedItem.debugData.collapsed;
                     break;
                 }
             }
@@ -697,7 +698,9 @@ public static partial class Clay
                             layoutData = __RenderDebugLayoutElementsList(initialRootsLength, highlightedRow);
                         }
                     }
-                    float contentWidth = __GetHashMapItem(panelContentsId.id)?.layoutElement.dimensions.width ?? 0;
+
+                    ref Clay_LayoutElementHashMapItem panelContents = ref __GetHashMapItem(panelContentsId.id);
+                    float contentWidth = !Unsafe.IsNullRef(in panelContents) ? panelContents.layoutElement.dimensions.width : 0;
                     using (AutoId(new Clay_ElementDeclaration
                     {
                         layout = new Clay_LayoutConfig { sizing = new Clay_Sizing { width = SizingFixed(contentWidth) }, layoutDirection = Clay_LayoutDirection.CLAY_TOP_TO_BOTTOM },
@@ -731,8 +734,8 @@ public static partial class Clay
                 backgroundColor = Clay__DEBUGVIEW_COLOR_3,
             })) { }
 
-            Clay_LayoutElementHashMapItem? selectedItem = __GetHashMapItem(context.debugSelectedElementId);
-            if (selectedItem != null && selectedItem.layoutElement != null)
+            ref Clay_LayoutElementHashMapItem selectedItem = ref __GetHashMapItem(context.debugSelectedElementId);
+            if (!Unsafe.IsNullRef(in selectedItem) && selectedItem.layoutElement != null)
             {
                 using (AutoId(() => new Clay_ElementDeclaration
                 {

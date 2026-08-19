@@ -539,12 +539,12 @@ namespace ClaySharp
         {
             get
             {
-                if (Unsafe.IsNullRef(ref internalData)) return default;
+                if (Unsafe.IsNullRef(in internalData)) return default;
                 return internalData.scrollPosition;
             }
             set
             {
-                if (Unsafe.IsNullRef(ref internalData)) return;
+                if (Unsafe.IsNullRef(in internalData)) return;
                 internalData.scrollPosition = value;
             }
         }
@@ -825,11 +825,11 @@ namespace ClaySharp
     }
 
     // Hash map item for element ID -> element lookups.
-    internal sealed class Clay_LayoutElementHashMapItem
+    internal struct Clay_LayoutElementHashMapItem
     {
         public Clay_BoundingBox boundingBox;
         public Clay_ElementId elementId;
-        public Clay_LayoutElement layoutElement = null!;
+        public Clay_LayoutElement layoutElement;
         public int layoutElementIndex; // Index into Clay_Context.layoutElements (replaces C pointer arithmetic).
         public Clay_OnHoverFunction? onHoverFunction;
         public object? hoverFunctionUserData;
@@ -1217,7 +1217,7 @@ namespace ClaySharp
         // Element ID hash map ------------------
         // -------------------------------------
 
-        internal static Clay_LayoutElementHashMapItem? __AddHashMapItem(Clay_ElementId elementId, Clay_LayoutElement layoutElement, int layoutElementIndex)
+        internal static ref Clay_LayoutElementHashMapItem __AddHashMapItem(Clay_ElementId elementId, Clay_LayoutElement layoutElement, int layoutElementIndex)
         {
             var context = GetCurrentContext()!;
             if (context.layoutElementsHashMapInternal.length == context.layoutElementsHashMapInternal.capacity - 1)
@@ -1228,7 +1228,7 @@ namespace ClaySharp
                     context.Error(Clay_ErrorType.CLAY_ERROR_TYPE_HASH_MAP_CAPACITY_EXCEEDED,
                         "Clay has run out of space in it's internal element ID hashmap.  Try using Clay_SetMaxElementCount() with a higher value.");
                 }
-                return null;
+                return ref Unsafe.NullRef<Clay_LayoutElementHashMapItem>();
             }
 
             var item = new Clay_LayoutElementHashMapItem
@@ -1246,7 +1246,7 @@ namespace ClaySharp
             int hashItemIndex = context.layoutElementsHashMap.internalArray[hashBucket];
             while (hashItemIndex != -1) // Just replace collision, not a big deal - leave it up to the end user.
             {
-                var hashItem = context.layoutElementsHashMapInternal.internalArray[hashItemIndex];
+                ref var hashItem = ref context.layoutElementsHashMapInternal.internalArray[hashItemIndex];
                 if (hashItem.elementId.id == elementId.id) // Collision - resolve based on generation.
                 {
                     item.nextIndex = hashItem.nextIndex;
@@ -1267,7 +1267,7 @@ namespace ClaySharp
                             "An element with this ID was already previously declared during this layout.");
                         if (context.debugModeEnabled) hashItem.debugData.collision = true;
                     }
-                    return hashItem;
+                    return ref hashItem;
                 }
                 hashItemPrevious = hashItemIndex;
                 hashItemIndex = hashItem.nextIndex;
@@ -1292,22 +1292,22 @@ namespace ClaySharp
             {
                 context.layoutElementsHashMap.internalArray[hashBucket] = indexToUse;
             }
-            return context.layoutElementsHashMapInternal.internalArray[indexToUse];
+            return ref context.layoutElementsHashMapInternal.internalArray[indexToUse];
         }
 
-        internal static Clay_LayoutElementHashMapItem? __GetHashMapItem(uint id)
+        internal static ref Clay_LayoutElementHashMapItem __GetHashMapItem(uint id)
         {
             var context = GetCurrentContext();
-            if (context == null) return null;
+            if (context == null) return ref Unsafe.NullRef<Clay_LayoutElementHashMapItem>();
             int hashBucket = (int)(id % (uint)context.layoutElementsHashMap.capacity);
             int elementIndex = context.layoutElementsHashMap.internalArray[hashBucket];
             while (elementIndex != -1)
             {
-                var hashEntry = context.layoutElementsHashMapInternal.internalArray[elementIndex];
-                if (hashEntry.elementId.id == id) return hashEntry;
+                ref var hashEntry = ref context.layoutElementsHashMapInternal.internalArray[elementIndex];
+                if (hashEntry.elementId.id == id) return ref hashEntry;
                 elementIndex = hashEntry.nextIndex;
             }
-            return null;
+            return ref Unsafe.NullRef<Clay_LayoutElementHashMapItem>();
         }
 
         // -------------------------------------
@@ -1647,8 +1647,8 @@ namespace ClaySharp
                     }
                     else if (declaration.floating.attachTo == Clay_FloatingAttachToElement.CLAY_ATTACH_TO_ELEMENT_WITH_ID)
                     {
-                        Clay_LayoutElementHashMapItem? parentItem = __GetHashMapItem(floatingConfig.parentId);
-                        if (parentItem == null)
+                        ref Clay_LayoutElementHashMapItem parentItem = ref __GetHashMapItem(floatingConfig.parentId);
+                        if (Unsafe.IsNullRef(in parentItem))
                         {
                             context.Error(Clay_ErrorType.CLAY_ERROR_TYPE_FLOATING_CONTAINER_PARENT_NOT_FOUND,
                                 "A floating element was declared with a parentId, but no element with that ID was found.");
@@ -1696,7 +1696,7 @@ namespace ClaySharp
                         scrollOffset.openThisFrame = true;
                     }
                 }
-                if (Unsafe.IsNullRef(ref scrollOffset))
+                if (Unsafe.IsNullRef(in scrollOffset))
                 {
                     scrollOffset = ref context.scrollContainerDatas.Add(new Clay__ScrollContainerDataInternal
                     {
@@ -1725,8 +1725,8 @@ namespace ClaySharp
                         if (existingData.state == Clay_TransitionState.CLAY_TRANSITION_STATE_EXITING)
                         {
                             existingData.state = Clay_TransitionState.CLAY_TRANSITION_STATE_IDLE;
-                            Clay_LayoutElementHashMapItem? hashMapItem = __GetHashMapItem(openLayoutElement.id);
-                            if (hashMapItem != null) hashMapItem.appearedThisFrame = false;
+                            ref Clay_LayoutElementHashMapItem hashMapItem = ref __GetHashMapItem(openLayoutElement.id);
+                            if (!Unsafe.IsNullRef(in hashMapItem)) hashMapItem.appearedThisFrame = false;
                         }
                         transitionData = ref existingData;
                         transitionData.elementThisFrame = openLayoutElement;
@@ -1739,7 +1739,7 @@ namespace ClaySharp
                         transitionData.transitionOut = declaration.transition.exit.setFinalState != null;
                     }
                 }
-                if (!Unsafe.IsNullRef(ref transitionData))
+                if (!Unsafe.IsNullRef(in transitionData))
                 {
                     transitionData = ref context.transitionDatas.Add(new Clay__TransitionDataInternal
                     {
@@ -1901,8 +1901,8 @@ namespace ClaySharp
                 if (rootElement.config.floating.attachTo != Clay_FloatingAttachToElement.CLAY_ATTACH_TO_NONE)
                 {
                     ref Clay_FloatingElementConfig floatingElementConfig = ref rootElement.config.floating;
-                    Clay_LayoutElementHashMapItem? parentItem = __GetHashMapItem(floatingElementConfig.parentId);
-                    if (parentItem != null)
+                    ref Clay_LayoutElementHashMapItem parentItem = ref __GetHashMapItem(floatingElementConfig.parentId);
+                    if (!Unsafe.IsNullRef(in parentItem))
                     {
                         Clay_LayoutElement parentLayoutElement = parentItem.layoutElement;
                         switch (rootElement.config.layout.sizing.width.type)
@@ -2406,10 +2406,10 @@ namespace ClaySharp
                 Clay__LayoutElementTreeRoot root = context.layoutElementTreeRoots.internalArray[rootIndex];
                 Clay_LayoutElement rootElement = context.layoutElements.internalArray[root.layoutElementIndex];
                 Vector2 rootPosition = default;
-                Clay_LayoutElementHashMapItem? parentHashMapItem = __GetHashMapItem(root.parentId);
+                ref Clay_LayoutElementHashMapItem parentHashMapItem = ref __GetHashMapItem(root.parentId);
 
                 // Position root floating containers.
-                if (rootElement.config.floating.attachTo != Clay_FloatingAttachToElement.CLAY_ATTACH_TO_NONE && parentHashMapItem != null)
+                if (rootElement.config.floating.attachTo != Clay_FloatingAttachToElement.CLAY_ATTACH_TO_NONE && !Unsafe.IsNullRef(in parentHashMapItem))
                 {
                     ref Clay_FloatingElementConfig config = ref rootElement.config.floating;
                     Clay_Dimensions rootDimensions = rootElement.dimensions;
@@ -2481,8 +2481,8 @@ namespace ClaySharp
 
                 if (root.clipElementId != 0)
                 {
-                    Clay_LayoutElementHashMapItem? clipHashMapItem = __GetHashMapItem(root.clipElementId);
-                    if (clipHashMapItem != null && !__ElementIsOffscreen(in clipHashMapItem.boundingBox))
+                    ref Clay_LayoutElementHashMapItem clipHashMapItem = ref __GetHashMapItem(root.clipElementId);
+                    if (!Unsafe.IsNullRef(in clipHashMapItem) && !__ElementIsOffscreen(in clipHashMapItem.boundingBox))
                     {
                         // Floating elements attached to scrolling contents won't be correctly positioned if external scroll handling is enabled; fix here.
                         if (context.externalScrollHandlingEnabled)
@@ -2533,8 +2533,8 @@ namespace ClaySharp
                             dfsBuffer.length--;
                             continue;
                         }
-                        Clay_LayoutElementHashMapItem? currentElementData = __GetHashMapItem(currentElement.id);
-                        if (generateRenderCommands && currentElementData != null && !__ElementIsOffscreen(in currentElementData.boundingBox))
+                        ref Clay_LayoutElementHashMapItem currentElementData = ref __GetHashMapItem(currentElement.id);
+                        if (generateRenderCommands && !Unsafe.IsNullRef(in currentElementData) && !__ElementIsOffscreen(in currentElementData.boundingBox))
                         {
                             bool closeClipElement = false;
                             if (currentElement.config.clip.horizontal || currentElement.config.clip.vertical)
@@ -2881,8 +2881,8 @@ namespace ClaySharp
                         }
                     }
 
-                    Clay_LayoutElementHashMapItem? hashMapItem = __GetHashMapItem(currentElement.id);
-                    if (hashMapItem != null) hashMapItem.boundingBox = currentElementBoundingBox;
+                    ref Clay_LayoutElementHashMapItem hashMapItem = ref __GetHashMapItem(currentElement.id);
+                    if (!Unsafe.IsNullRef(in hashMapItem)) hashMapItem.boundingBox = currentElementBoundingBox;
 
                     if (currentElement.isTextElement) continue;
 
@@ -2931,7 +2931,7 @@ namespace ClaySharp
                         currentElementTreeNode.nextChildOffset.Y += extraSpace;
                     }
 
-                    if (!Unsafe.IsNullRef(ref scrollContainerData))
+                    if (!Unsafe.IsNullRef(in scrollContainerData))
                     {
                         scrollContainerData.contentSize = new Clay_Dimensions
                         {
@@ -3001,8 +3001,8 @@ namespace ClaySharp
 
                 if (root.clipElementId != 0)
                 {
-                    Clay_LayoutElementHashMapItem? clipHashMapItem = __GetHashMapItem(root.clipElementId);
-                    if (clipHashMapItem != null && !__ElementIsOffscreen(in clipHashMapItem.boundingBox))
+                    ref Clay_LayoutElementHashMapItem clipHashMapItem = ref __GetHashMapItem(root.clipElementId);
+                    if (!Unsafe.IsNullRef(in clipHashMapItem) && !__ElementIsOffscreen(in clipHashMapItem.boundingBox))
                     {
                         __AddRenderCommand(new Clay_RenderCommand
                         {
@@ -3103,12 +3103,12 @@ namespace ClaySharp
                     int currentElementIndex = dfsBuffer.internalArray[dfsBuffer.length - 1];
                     Clay_LayoutElement currentElement = context.layoutElements.internalArray[currentElementIndex];
 
-                    Clay_LayoutElementHashMapItem? mapItem = __GetHashMapItem(currentElement.id); // TODO think of a way around this.
+                    ref Clay_LayoutElementHashMapItem mapItem = ref __GetHashMapItem(currentElement.id); // TODO think of a way around this.
                     int clipElementId = context.layoutElementClipElementIds.GetValue(currentElementIndex);
-                    Clay_LayoutElementHashMapItem? clipItem = __GetHashMapItem((uint)clipElementId);
+                    ref Clay_LayoutElementHashMapItem clipItem = ref __GetHashMapItem((uint)clipElementId);
 
                     // This check skips mouse interactions for elements that are currently "exit transitioning".
-                    if (mapItem != null && mapItem.generation > context.generation)
+                    if (!Unsafe.IsNullRef(in mapItem) && mapItem.generation > context.generation)
                     {
                         // Conditionally skip mouse interactions on non-exit transitions, based on user config.
                         if (!currentElement.isTextElement && currentElement.config.transition.handler != null)
@@ -3147,7 +3147,7 @@ namespace ClaySharp
                         elementBox.x -= root.pointerOffset.X;
                         elementBox.y -= root.pointerOffset.Y;
                         if (__PointIsInsideRect(position, elementBox)
-                            && (clipElementId == 0 || (clipItem != null && __PointIsInsideRect(position, clipItem.boundingBox)) || context.externalScrollHandlingEnabled))
+                            && (clipElementId == 0 || (!Unsafe.IsNullRef(in clipItem) && __PointIsInsideRect(position, clipItem.boundingBox)) || context.externalScrollHandlingEnabled))
                         {
                             mapItem.onHoverFunction?.Invoke(mapItem.elementId, context.pointerInfo, mapItem.hoverFunctionUserData);
                             context.pointerOverIds.Add(mapItem.elementId);
@@ -3232,9 +3232,9 @@ namespace ClaySharp
                     continue;
                 }
                 scrollData.openThisFrame = false;
-                Clay_LayoutElementHashMapItem? hashMapItem = __GetHashMapItem(scrollData.elementId);
+                ref Clay_LayoutElementHashMapItem hashMapItem = ref __GetHashMapItem(scrollData.elementId);
                 // Element isn't rendered this frame but scroll offset has been retained.
-                if (hashMapItem == null)
+                if (Unsafe.IsNullRef(in hashMapItem))
                 {
                     context.scrollContainerDatas.RemoveSwapback(i);
                     continue;
@@ -3287,7 +3287,7 @@ namespace ClaySharp
                 }
             }
 
-            if (highestPriorityElementIndex > -1 && !Unsafe.IsNullRef(ref highestPriorityScrollData))
+            if (highestPriorityElementIndex > -1 && !Unsafe.IsNullRef(in highestPriorityScrollData))
             {
                 Clay_LayoutElement scrollElement = highestPriorityScrollData.layoutElement;
                 ref Clay_ClipElementConfig clipConfig = ref scrollElement.config.clip;
@@ -3454,11 +3454,11 @@ namespace ClaySharp
             for (int i = 0; i < context.transitionDatas.length; ++i)
             {
                 ref Clay__TransitionDataInternal data = ref context.transitionDatas.internalArray[i];
-                Clay_LayoutElementHashMapItem? hashMapItem = __GetHashMapItem(data.elementId);
+                ref Clay_LayoutElementHashMapItem hashMapItem = ref __GetHashMapItem(data.elementId);
                 // Transition element exited and doesn't have an exit handler defined,
                 // or the user deleted the transition handler from one frame to the next.
                 if (!data.transitionOut
-                    && (hashMapItem == null || hashMapItem.generation <= context.generation || hashMapItem.layoutElement == null || hashMapItem.layoutElement.config.transition.handler == null))
+                    && (Unsafe.IsNullRef(in hashMapItem) || hashMapItem.generation <= context.generation || hashMapItem.layoutElement == null || hashMapItem.layoutElement.config.transition.handler == null))
                 {
                     context.transitionDatas.RemoveSwapback(i);
                     i--;
@@ -3472,22 +3472,22 @@ namespace ClaySharp
             for (int i = 0; i < context.transitionDatas.length; ++i)
             {
                 ref Clay__TransitionDataInternal data = ref context.transitionDatas.internalArray[i];
-                Clay_LayoutElementHashMapItem? hashMapItem = __GetHashMapItem(data.elementId);
+                ref Clay_LayoutElementHashMapItem hashMapItem = ref __GetHashMapItem(data.elementId);
                 if (data.transitionOut)
                 {
                     Clay_TransitionElementConfig config = data.elementThisFrame.config.transition;
                     // Element wasn't found this frame - either delete transition data or transition out.
-                    if (hashMapItem != null && hashMapItem.generation <= context.generation)
+                    if (!Unsafe.IsNullRef(in hashMapItem) && hashMapItem.generation <= context.generation)
                     {
-                        Clay_LayoutElementHashMapItem? parentHashMapItem = __GetHashMapItem(data.parentId);
+                        ref Clay_LayoutElementHashMapItem parentHashMapItem = ref __GetHashMapItem(data.parentId);
                         // Don't exit transition if the parent has also exited and SKIP_WHEN_PARENT_EXITS is used.
                         if (config.exit.trigger == Clay_TransitionExitTriggerType.CLAY_TRANSITION_EXIT_TRIGGER_WHEN_PARENT_EXITS
-                            || parentHashMapItem == null || parentHashMapItem.generation > context.generation)
+                            || Unsafe.IsNullRef(in parentHashMapItem) || parentHashMapItem.generation > context.generation)
                         {
                             // This if only runs one single time when the element first starts exiting.
                             if (data.state != Clay_TransitionState.CLAY_TRANSITION_STATE_EXITING)
                             {
-                                if (parentHashMapItem == null || parentHashMapItem.generation <= context.generation)
+                                if (Unsafe.IsNullRef(in parentHashMapItem) || parentHashMapItem.generation <= context.generation)
                                 {
                                     data.elementThisFrame.config.floating.attachTo = Clay_FloatingAttachToElement.CLAY_ATTACH_TO_ROOT;
                                     data.elementThisFrame.config.floating.offset = new Vector2(hashMapItem.boundingBox.x, hashMapItem.boundingBox.y);
@@ -3521,9 +3521,9 @@ namespace ClaySharp
                             while (bufferIndex < bfsBuffer.length)
                             {
                                 Clay_LayoutElement layoutElement = context.layoutElements.internalArray[bfsBuffer.internalArray[bufferIndex]];
-                                Clay_LayoutElementHashMapItem? bfsMapItem = __GetHashMapItem(layoutElement.id);
+                                ref Clay_LayoutElementHashMapItem bfsMapItem = ref __GetHashMapItem(layoutElement.id);
                                 // Children of exiting elements may have been moved elsewhere in the layout; this prevents a duplicate ID error.
-                                if (bfsMapItem == null || bfsMapItem.generation <= context.generation)
+                                if (Unsafe.IsNullRef(in bfsMapItem) || bfsMapItem.generation <= context.generation)
                                 {
                                     __AddHashMapItem(new Clay_ElementId { id = layoutElement.id }, layoutElement, layoutElement.index);
                                     int firstChildSlot = context.layoutElementChildren.length;
@@ -3531,8 +3531,8 @@ namespace ClaySharp
                                     for (int j = 0; j < layoutElement.children.length; ++j)
                                     {
                                         Clay_LayoutElement childElement = layoutElement.children.elements[layoutElement.children.offset + j];
-                                        Clay_LayoutElementHashMapItem? childMapItem = __GetHashMapItem(childElement.id);
-                                        if (childMapItem == null || childMapItem.generation <= context.generation)
+                                        ref Clay_LayoutElementHashMapItem childMapItem = ref __GetHashMapItem(childElement.id);
+                                        if (Unsafe.IsNullRef(in childMapItem) || childMapItem.generation <= context.generation)
                                         {
                                             // Remove any nested transitions inside exiting trees.
                                             if (!childElement.isTextElement && childElement.config.transition.handler != null)
@@ -3571,7 +3571,7 @@ namespace ClaySharp
 
                             // Reattach the inserted subtree to its previous parent if it still exists and the exiting element is not floating.
                             Clay_FloatingElementConfig floatingConfig = hashMapItem.layoutElement.config.floating;
-                            if (parentHashMapItem != null && parentHashMapItem.generation > context.generation && floatingConfig.attachTo == Clay_FloatingAttachToElement.CLAY_ATTACH_TO_NONE)
+                            if (!Unsafe.IsNullRef(in parentHashMapItem) && parentHashMapItem.generation > context.generation && floatingConfig.attachTo == Clay_FloatingAttachToElement.CLAY_ATTACH_TO_NONE)
                             {
                                 Clay_LayoutElement parentElement = parentHashMapItem.layoutElement;
                                 int newChildrenStartIndex = context.layoutElementChildren.length;
@@ -3661,9 +3661,9 @@ namespace ClaySharp
                     {
                         ref Clay__TransitionDataInternal transitionData = ref context.transitionDatas.internalArray[i];
                         Clay_LayoutElement currentElement = transitionData.elementThisFrame;
-                        Clay_LayoutElementHashMapItem? mapItem = __GetHashMapItem(transitionData.elementId);
-                        if (mapItem == null) continue;
-                        Clay_LayoutElementHashMapItem? parentMapItem = __GetHashMapItem(transitionData.parentId);
+                        ref Clay_LayoutElementHashMapItem mapItem = ref __GetHashMapItem(transitionData.elementId);
+                        if (Unsafe.IsNullRef(in mapItem)) continue;
+                        ref Clay_LayoutElementHashMapItem parentMapItem = ref __GetHashMapItem(transitionData.parentId);
 
                         Clay_TransitionData targetState = transitionData.targetState;
                         if (transitionData.state != Clay_TransitionState.CLAY_TRANSITION_STATE_EXITING)
@@ -3683,7 +3683,7 @@ namespace ClaySharp
                         if (mapItem.appearedThisFrame)
                         {
                             if (currentElement.config.transition.enter.setInitialState != null
-                                && !(parentMapItem != null && parentMapItem.appearedThisFrame && currentElement.config.transition.enter.trigger == Clay_TransitionEnterTriggerType.CLAY_TRANSITION_ENTER_SKIP_ON_FIRST_PARENT_FRAME))
+                                && !(!Unsafe.IsNullRef(in parentMapItem) && parentMapItem.appearedThisFrame && currentElement.config.transition.enter.trigger == Clay_TransitionEnterTriggerType.CLAY_TRANSITION_ENTER_SKIP_ON_FIRST_PARENT_FRAME))
                             {
                                 transitionData.state = Clay_TransitionState.CLAY_TRANSITION_STATE_ENTERING;
                                 transitionData.initialState = currentElement.config.transition.enter.setInitialState(transitionData.targetState, currentElement.config.transition.properties);
@@ -3702,10 +3702,10 @@ namespace ClaySharp
                         {
                             if (transitionData.state != Clay_TransitionState.CLAY_TRANSITION_STATE_EXITING)
                             {
-                                Vector2 parentScrollOffset = parentMapItem != null ? parentMapItem.layoutElement.config.clip.childOffset : default;
+                                Vector2 parentScrollOffset = !Unsafe.IsNullRef(in parentMapItem) ? parentMapItem.layoutElement.config.clip.childOffset : default;
                                 Vector2 newRelativePosition = new Vector2(
-                                    mapItem.boundingBox.x - (parentMapItem != null ? parentMapItem.boundingBox.x : 0) - parentScrollOffset.X,
-                                    mapItem.boundingBox.y - (parentMapItem != null ? parentMapItem.boundingBox.y : 0) - parentScrollOffset.Y);
+                                    mapItem.boundingBox.x - (!Unsafe.IsNullRef(in parentMapItem) ? parentMapItem.boundingBox.x : 0) - parentScrollOffset.X,
+                                    mapItem.boundingBox.y - (!Unsafe.IsNullRef(in parentMapItem) ? parentMapItem.boundingBox.y : 0) - parentScrollOffset.Y);
                                 Vector2 oldRelativePosition = transitionData.oldParentRelativePosition;
                                 transitionData.oldParentRelativePosition = newRelativePosition;
 
@@ -3922,8 +3922,8 @@ namespace ClaySharp
             var context = GetCurrentContext()!;
             if (context.booleanWarnings.maxElementsExceeded) return;
             Clay_LayoutElement openLayoutElement = __GetOpenLayoutElement();
-            Clay_LayoutElementHashMapItem? hashMapItem = __GetHashMapItem(openLayoutElement.id);
-            if (hashMapItem != null)
+            ref Clay_LayoutElementHashMapItem hashMapItem = ref __GetHashMapItem(openLayoutElement.id);
+            if (!Unsafe.IsNullRef(in hashMapItem))
             {
                 hashMapItem.onHoverFunction = onHoverFunction;
                 hashMapItem.hoverFunctionUserData = userData;
@@ -3963,8 +3963,8 @@ namespace ClaySharp
 
         public static Clay_ElementData GetElementData(Clay_ElementId id)
         {
-            Clay_LayoutElementHashMapItem? item = __GetHashMapItem(id.id);
-            if (item == null) return default;
+            ref Clay_LayoutElementHashMapItem item = ref __GetHashMapItem(id.id);
+            if (Unsafe.IsNullRef(in item)) return default;
             return new Clay_ElementData { boundingBox = item.boundingBox, found = true };
         }
 
