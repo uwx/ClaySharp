@@ -4090,20 +4090,27 @@ namespace ClaySharp
         // DSL (replaces the C macros) ---------
         // -------------------------------------
 
-        private sealed class ElementScope : IDisposable
+        public sealed class ElementScope : IDisposable
         {
-            public void Dispose() => __CloseElement();
+            void IDisposable.Dispose() => __CloseElement();
+            
+            public void Close() => __CloseElement();
         }
 
         private static readonly ElementScope s_elementScope = new ElementScope();
 
         // CLAY(id, ...) { ... }  →  using (Clay.Element(id, decl)) { ... }
-        public static IDisposable Element(Clay_ElementId id, Clay_ElementDeclaration declaration) => Element(id, () => declaration);
+        public static ElementScope Element(Clay_ElementId id, Clay_ElementDeclaration declaration)
+        {
+            __OpenElementWithId(id);
+            __ConfigureOpenElement(declaration);
+            return s_elementScope;
+        }
 
         // Overload that evaluates the declaration _after_ the element is opened, so expressions like
         // Clay.Hovered() or Clay.GetScrollOffset() inside the declaration observe the newly opened element
         // (matching the C macro's evaluation order).
-        public static IDisposable Element(Clay_ElementId id, Func<Clay_ElementDeclaration> declaration)
+        public static ElementScope Element(Clay_ElementId id, Func<Clay_ElementDeclaration> declaration)
         {
             __OpenElementWithId(id);
             __ConfigureOpenElement(declaration());
@@ -4111,9 +4118,9 @@ namespace ClaySharp
         }
 
         // CLAY_AUTO_ID(...) { ... }  →  using (Clay.AutoId(decl)) { ... }
-        public static IDisposable AutoId(Clay_ElementDeclaration declaration) => AutoId(() => declaration);
+        public static ElementScope AutoId(Clay_ElementDeclaration declaration) => AutoId(() => declaration);
 
-        public static IDisposable AutoId(Func<Clay_ElementDeclaration> declaration)
+        public static ElementScope AutoId(Func<Clay_ElementDeclaration> declaration)
         {
             __OpenElement();
             __ConfigureOpenElement(declaration());
