@@ -20,10 +20,13 @@
     <None Remove="clay\**" />
     <Compile Remove="examples\**" />
     <None Remove="examples\**" />
+    <Compile Remove="plugins\**" />
+    <None Remove="plugins\**" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Remove="renderer\**" />
     <EmbeddedResource Remove="clay\**" />
+    <EmbeddedResource Remove="plugins\**" />
   </ItemGroup>
 
 </Project>

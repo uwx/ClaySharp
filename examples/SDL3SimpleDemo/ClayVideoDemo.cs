@@ -1,4 +1,5 @@
 using ClaySharp;
+using ClaySharp.Plugin.TextInput;
 
 namespace ClaySharp.Examples.SDL3;
 
@@ -9,6 +10,7 @@ public sealed class ClayVideoDemo_Data
 {
     public int selectedDocumentIndex;
     public float yOffset;
+    public Clay_TextInputState textInput = null!;
 }
 
 public static class ClayVideoDemo
@@ -122,7 +124,10 @@ public static class ClayVideoDemo
         documents[3] = new Document { title = "Article 4", contents = "Article 4" };
         documents[4] = new Document { title = "Article 5", contents = "Article 5" };
 
-        return new ClayVideoDemo_Data();
+        return new ClayVideoDemo_Data
+        {
+            textInput = ClayTextInput.State_Static(Clay.Id("SearchInput"), 64),
+        };
     }
 
     public static Clay_RenderCommandArray CreateLayout(ClayVideoDemo_Data data)
@@ -131,6 +136,27 @@ public static class ClayVideoDemo
 
         Clay_Sizing layoutExpand = new Clay_Sizing { width = Clay.SizingGrow(0), height = Clay.SizingGrow(0) };
         Clay_Color contentBackgroundColor = new Clay_Color(90, 90, 90, 255);
+
+        Clay_TextInputConfig textInputConfig = new Clay_TextInputConfig
+        {
+            sizing = new Clay_Sizing { width = Clay.SizingFixed(260), height = Clay.SizingFixed(40) },
+            padding = Clay.PaddingAll(8),
+            textConfig = new Clay_TextElementConfig
+            {
+                fontId = FONT_ID_BODY_16,
+                fontSize = 16,
+                textColor = COLOR_WHITE,
+            },
+            placeholder = "Search…",
+            colorBackground = new Clay_Color(50, 50, 55, 255),
+            colorBorder = new Clay_Color(90, 90, 95, 255),
+            colorBorderFocus = new Clay_Color(100, 160, 255, 255),
+            colorPlaceholder = new Clay_Color(150, 150, 150, 255),
+            colorSelection = new Clay_Color(60, 120, 210, 160),
+            colorCursor = new Clay_Color(220, 220, 220, 255),
+            cornerRadius = Clay.CornerRadius(6),
+            borderWidth = Clay.BorderAll(1),
+        };
 
         using (Clay.Element(Clay.Id("OuterContainer"), new Clay_ElementDeclaration
         {
@@ -209,6 +235,7 @@ public static class ClayVideoDemo
 
                 RenderHeaderButton("Edit");
                 using (Clay.AutoId(new Clay_ElementDeclaration { layout = new Clay_LayoutConfig { sizing = new Clay_Sizing { width = Clay.SizingGrow(0) } } })) { }
+                ClayTextInput.TextInput(data.textInput, textInputConfig);
                 RenderHeaderButton("Upload");
                 RenderHeaderButton("Media");
                 RenderHeaderButton("Support");

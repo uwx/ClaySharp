@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ClaySharp.csproj" />
+    <ProjectReference Include="..\plugins\ClaySharp.Plugin.TextInput\ClaySharp.Plugin.TextInput.csproj" />
   </ItemGroup>
 
 </Project>

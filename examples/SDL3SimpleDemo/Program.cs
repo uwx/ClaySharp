@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Numerics;
 using ClaySharp;
+using ClaySharp.Plugin.TextInput;
+using ClaySharp.Plugin.TextInput.SDL3;
 using ClaySharp.Renderer.SDL3;
 using Microsoft.Extensions.Primitives;
 using SDL3;
@@ -20,6 +22,9 @@ internal sealed partial class Game : SDL.IMainCallbacks<Game>
 
     private static nint sampleImage;
     private static bool showDemo = true;
+
+    private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
+    private double _lastFrameSeconds;
 
     private static string Resource(string name) => Path.Combine(AppContext.BaseDirectory, "resources", name);
 
@@ -115,7 +120,11 @@ internal sealed partial class Game : SDL.IMainCallbacks<Game>
         Clay.Initialize(new Clay_Dimensions(width, height), new Clay_ErrorHandler { errorHandlerFunction = HandleClayErrors });
         Clay.SetMeasureTextFunction(MeasureText, state.rendererData.fonts);
 
+        ClayTextInput.SetPlatform(ClayTextInputSdl3.Platform());
+        SDL.StartTextInput(state.window);
+
         state.demoData = ClayVideoDemo.Initialize();
+        state._lastFrameSeconds = state._clock.Elapsed.TotalSeconds;
 
         return SDL.AppResult.Continue;
     }
@@ -124,13 +133,15 @@ internal sealed partial class Game : SDL.IMainCallbacks<Game>
     {
         SDL.AppResult result = SDL.AppResult.Continue;
 
+        ClayTextInputSdl3.ProcessEvent(ref @event);
+
         switch ((SDL.EventType)@event.Type)
         {
             case SDL.EventType.Quit:
                 result = SDL.AppResult.Success;
                 break;
             case SDL.EventType.KeyUp:
-                if (@event.Key.Key == SDL.Keycode.Space)
+                if (@event.Key.Key == SDL.Keycode.Space && !demoData.textInput.focused)
                 {
                     showDemo = !showDemo;
                 }
@@ -154,6 +165,10 @@ internal sealed partial class Game : SDL.IMainCallbacks<Game>
     {
         SDL.MouseButtonFlags buttons = SDL.GetMouseState(out float mouseX, out float mouseY);
         Clay.SetPointerState(new Vector2(mouseX, mouseY), (buttons & (SDL.MouseButtonFlags)SDL.ButtonMask(1)) != 0);
+
+        double now = _clock.Elapsed.TotalSeconds;
+        ClayTextInput.Update(now - _lastFrameSeconds);
+        _lastFrameSeconds = now;
 
         Clay_RenderCommandArray renderCommands = showDemo
             ? ClayVideoDemo.CreateLayout(demoData)

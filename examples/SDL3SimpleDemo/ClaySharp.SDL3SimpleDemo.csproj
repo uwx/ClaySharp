@@ -9,6 +9,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\renderer\sdl3\ClaySharp.Renderer.SDL3.csproj" />
+    <ProjectReference Include="..\..\plugins\ClaySharp.Plugin.TextInput\ClaySharp.Plugin.TextInput.csproj" />
+    <ProjectReference Include="..\..\plugins\ClaySharp.Plugin.TextInput.SDL3\ClaySharp.Plugin.TextInput.SDL3.csproj" />
   </ItemGroup>
 
   <ItemGroup>

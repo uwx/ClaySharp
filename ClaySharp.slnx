@@ -1,5 +1,7 @@
 <Solution>
   <Project Path="ClaySharp.csproj" />
+  <Project Path="plugins/ClaySharp.Plugin.TextInput/ClaySharp.Plugin.TextInput.csproj" />
+  <Project Path="plugins/ClaySharp.Plugin.TextInput.SDL3/ClaySharp.Plugin.TextInput.SDL3.csproj" />
   <Project Path="examples/SDL3SimpleDemo/ClaySharp.SDL3SimpleDemo.csproj" />
   <Project Path="examples/FNASimpleDemo/ClaySharp.FNASimpleDemo.csproj" />
   <Project Path="renderer/sdl3/ClaySharp.Renderer.SDL3.csproj" />
