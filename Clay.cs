@@ -379,13 +379,11 @@ namespace ClaySharp
         CLAY_TRANSITION_PROPERTY_BORDER = CLAY_TRANSITION_PROPERTY_BORDER_COLOR | CLAY_TRANSITION_PROPERTY_BORDER_WIDTH,
     }
 
-    // In the C library this is a struct passed by value with a `Clay_TransitionData *current` pointer.
-    // In C# it is a class so transition handlers can mutate `current` through a live reference.
-    public sealed class Clay_TransitionCallbackArguments
+    public ref struct Clay_TransitionCallbackArguments
     {
         public Clay_TransitionState transitionState;
         public Clay_TransitionData initial;
-        public Clay_TransitionData current; // Live mutable state — the handler writes interpolated values here.
+        public ref Clay_TransitionData current; // Live mutable state — the handler writes interpolated values here.
         public Clay_TransitionData target;
         public float elapsedTime;
         public float duration;
@@ -3772,18 +3770,16 @@ namespace ClaySharp
                             }
                             else
                             {
-                                var arguments = new Clay_TransitionCallbackArguments
+                                bool transitionComplete = currentElement.config.transition.handler!(new Clay_TransitionCallbackArguments
                                 {
                                     transitionState = transitionData.state,
                                     initial = transitionData.initialState,
-                                    current = transitionData.currentState,
+                                    current = ref transitionData.currentState,
                                     target = targetState,
                                     elapsedTime = transitionData.elapsedTime,
                                     duration = currentElement.config.transition.duration,
                                     properties = transitionData.activeProperties,
-                                };
-                                bool transitionComplete = currentElement.config.transition.handler!(arguments);
-                                transitionData.currentState = arguments.current;
+                                });
                                 __ApplyTransitionedPropertiesToElement(currentElement, transitionData.activeProperties, transitionData.currentState, ref mapItem.boundingBox, transitionData.reparented);
                                 transitionData.elapsedTime += deltaTime;
 
