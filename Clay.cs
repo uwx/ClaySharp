@@ -1064,9 +1064,9 @@ public static partial class Clay
     private const float MaxFloat = 3.40282346638528859812e+38f;
     private const float Epsilon = 0.01f;
 
-    internal static Context? SCurrentContext;
-    internal static int SDefaultMaxElementCount = 8192;
-    internal static int SDefaultMaxMeasureTextWordCacheCount = 16384;
+    internal static Context? CurrentContext;
+    internal static int DefaultMaxElementCount = 8192;
+    internal static int DefaultMaxMeasureTextWordCacheCount = 16384;
 
     // Default layout config (matches the C `extern LayoutConfig LAYOUT_DEFAULT`).
     public static readonly LayoutConfig LayoutDefault = default;
@@ -1076,11 +1076,11 @@ public static partial class Clay
     public static Color DebugViewHighlightColor = new Color(168, 66, 28, 100);
 
     // Function-pointer globals (mirrors the C `_MeasureText` / `_QueryScrollOffset`).
-    internal static MeasureTextFunction? SMeasureText;
-    internal static QueryScrollOffsetFunction? SQueryScrollOffset;
+    internal static MeasureTextFunction? MeasureText;
+    internal static QueryScrollOffsetFunction? QueryScrollOffset;
 
-    public static Context? GetCurrentContext() => SCurrentContext;
-    public static void SetCurrentContext(Context? context) => SCurrentContext = context;
+    public static Context? GetCurrentContext() => CurrentContext;
+    public static void SetCurrentContext(Context? context) => CurrentContext = context;
 
     // -------------------------------------
     // Error helpers ------------------------
@@ -1326,7 +1326,7 @@ public static partial class Clay
     internal static MeasureTextCacheItem __MeasureTextCached(string text, TextElementConfig config)
     {
         var context = GetCurrentContext()!;
-        if (SMeasureText == null)
+        if (MeasureText == null)
         {
             if (!context.BooleanWarnings.TextMeasurementFunctionNotSet)
             {
@@ -1414,7 +1414,7 @@ public static partial class Clay
         float lineWidth = 0;
         float measuredWidth = 0;
         float measuredHeight = 0;
-        float spaceWidth = SMeasureText(new StringSegment(" "), config, context.MeasureTextUserData).Width;
+        float spaceWidth = MeasureText(new StringSegment(" "), config, context.MeasureTextUserData).Width;
 
         MeasuredWord tempWord = default;
         tempWord.Next = -1;
@@ -1440,7 +1440,7 @@ public static partial class Clay
                 Dimensions dimensions = default;
                 if (length > 0)
                 {
-                    dimensions = SMeasureText(new StringSegment(text, start, length), config, context.MeasureTextUserData);
+                    dimensions = MeasureText(new StringSegment(text, start, length), config, context.MeasureTextUserData);
                 }
                 measured.MinWidth = MathF.Max(dimensions.Width, measured.MinWidth);
                 measuredHeight = MathF.Max(measuredHeight, dimensions.Height);
@@ -1469,7 +1469,7 @@ public static partial class Clay
 
         if (end - start > 0)
         {
-            Dimensions dimensions = SMeasureText(new StringSegment(text, start, end - start), config, context.MeasureTextUserData);
+            Dimensions dimensions = MeasureText(new StringSegment(text, start, end - start), config, context.MeasureTextUserData);
             __AddMeasuredWord(new MeasuredWord { StartOffset = start, Length = end - start, Width = dimensions.Width, Next = -1 }, ref previousWord);
             lineWidth += dimensions.Width;
             measuredHeight = MathF.Max(measuredHeight, dimensions.Height);
@@ -1699,7 +1699,7 @@ public static partial class Clay
             }
             if (context.ExternalScrollHandlingEnabled)
             {
-                scrollOffset.ScrollPosition = SQueryScrollOffset!(scrollOffset.ElementId, context.QueryScrollOffsetUserData);
+                scrollOffset.ScrollPosition = QueryScrollOffset!(scrollOffset.ElementId, context.QueryScrollOffsetUserData);
             }
         }
 
@@ -2230,7 +2230,7 @@ public static partial class Clay
                 continue;
             }
 
-            float spaceWidth = SMeasureText!(new StringSegment(" "), element.TextConfig, context.MeasureTextUserData).Width;
+            float spaceWidth = MeasureText!(new StringSegment(" "), element.TextConfig, context.MeasureTextUserData).Width;
             int wordIndex = measureTextCacheItem.MeasuredWordsStartIndex;
             while (wordIndex != -1)
             {
@@ -3013,8 +3013,8 @@ public static partial class Clay
 
     public static Context Initialize(Dimensions layoutDimensions, ErrorHandler errorHandler)
     {
-        int maxElementCount = SCurrentContext != null ? SCurrentContext.MaxElementCount : SDefaultMaxElementCount;
-        int maxMeasureTextCacheWordCount = SCurrentContext != null ? SCurrentContext.MaxMeasureTextCacheWordCount : SDefaultMaxMeasureTextWordCacheCount;
+        int maxElementCount = CurrentContext != null ? CurrentContext.MaxElementCount : DefaultMaxElementCount;
+        int maxMeasureTextCacheWordCount = CurrentContext != null ? CurrentContext.MaxMeasureTextCacheWordCount : DefaultMaxMeasureTextWordCacheCount;
 
         var context = new Context
         {
@@ -3043,14 +3043,14 @@ public static partial class Clay
     public static void SetMeasureTextFunction(MeasureTextFunction measureTextFunction, object? userData)
     {
         var context = GetCurrentContext()!;
-        SMeasureText = measureTextFunction;
+        MeasureText = measureTextFunction;
         context.MeasureTextUserData = userData;
     }
 
     public static void SetQueryScrollOffsetFunction(QueryScrollOffsetFunction queryScrollOffsetFunction, object? userData)
     {
         var context = GetCurrentContext()!;
-        SQueryScrollOffset = queryScrollOffsetFunction;
+        QueryScrollOffset = queryScrollOffsetFunction;
         context.QueryScrollOffsetUserData = userData;
     }
 
@@ -3977,8 +3977,8 @@ public static partial class Clay
         }
         else
         {
-            SDefaultMaxElementCount = maxElementCount;
-            SDefaultMaxMeasureTextWordCacheCount = maxElementCount * 2;
+            DefaultMaxElementCount = maxElementCount;
+            DefaultMaxMeasureTextWordCacheCount = maxElementCount * 2;
         }
     }
 
@@ -3993,7 +3993,7 @@ public static partial class Clay
         }
         else
         {
-            SDefaultMaxMeasureTextWordCacheCount = maxMeasureTextCacheWordCount;
+            DefaultMaxMeasureTextWordCacheCount = maxMeasureTextCacheWordCount;
         }
     }
 
