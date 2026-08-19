@@ -182,99 +182,103 @@ public class FNA_Clay
     /// the destination rect and vertex color is forced to white, so the same geometry
     /// can clip a texture to the rounded shape.
     /// </summary>
-    private static void AppendRoundedRect(FNA_ClayDeviceResources r, in Clay_BoundingBox rect, float cornerRadius, Color color, bool textured)
+    private static void AppendRoundedRect(FNA_ClayDeviceResources r, in Clay_BoundingBox rect, in Clay_CornerRadius cornerRadius, Color color, bool textured)
     {
         float minRadius = Math.Min(rect.width, rect.height) / 2f;
-        float clampedRadius = Math.Min(cornerRadius, minRadius);
-        if (clampedRadius <= 0f)
+        float tl = Math.Clamp(cornerRadius.topLeft, 0f, minRadius);
+        float tr = Math.Clamp(cornerRadius.topRight, 0f, minRadius);
+        float br = Math.Clamp(cornerRadius.bottomRight, 0f, minRadius);
+        float bl = Math.Clamp(cornerRadius.bottomLeft, 0f, minRadius);
+
+        if (tl <= 0f && tr <= 0f && br <= 0f && bl <= 0f)
         {
             AppendPlainRect(r, rect, color, textured);
             return;
         }
 
-        int numCircleSegments = Math.Max(NUM_CIRCLE_SEGMENTS, (int)(clampedRadius * 0.5f));
-        if (numCircleSegments > MAX_CIRCLE_SEGMENTS_FILL)
+        float maxRadius = Math.Max(Math.Max(tl, tr), Math.Max(br, bl));
+        int numSegments = Math.Max(NUM_CIRCLE_SEGMENTS, (int)(maxRadius * 0.5f));
+        if (numSegments > MAX_CIRCLE_SEGMENTS_FILL)
         {
-            numCircleSegments = MAX_CIRCLE_SEGMENTS_FILL;
+            numSegments = MAX_CIRCLE_SEGMENTS_FILL;
         }
 
-        int totalVertices = 4 + 4 * (numCircleSegments * 2) + 8;
-        int totalIndices = 6 + 4 * (numCircleSegments * 3) + 24;
-        r.EnsureScratchCapacity(totalVertices, totalIndices);
+        int roundedCorners = (tl > 0f ? 1 : 0) + (tr > 0f ? 1 : 0) + (br > 0f ? 1 : 0) + (bl > 0f ? 1 : 0);
+        r.EnsureScratchCapacity(4 + roundedCorners * (numSegments + 1) + 8, 6 + roundedCorners * numSegments * 3 + 24);
 
-        ushort b = (ushort)r.VertexCount;
         Color vc = textured ? Color.White : color;
         float x0 = rect.x, y0 = rect.y, x1 = rect.x + rect.width, y1 = rect.y + rect.height;
 
-        // Center rectangle (TL, TR, BR, BL).
-        AddVertex(r, x0 + clampedRadius, y0 + clampedRadius, vc, Uv(rect, textured, x0 + clampedRadius, y0 + clampedRadius));
-        AddVertex(r, x1 - clampedRadius, y0 + clampedRadius, vc, Uv(rect, textured, x1 - clampedRadius, y0 + clampedRadius));
-        AddVertex(r, x1 - clampedRadius, y1 - clampedRadius, vc, Uv(rect, textured, x1 - clampedRadius, y1 - clampedRadius));
-        AddVertex(r, x0 + clampedRadius, y1 - clampedRadius, vc, Uv(rect, textured, x0 + clampedRadius, y1 - clampedRadius));
+        // Inner corners of the center quad (also the arc centers).
+        Vector2 itl = new Vector2(x0 + tl, y0 + tl);
+        Vector2 itr = new Vector2(x1 - tr, y0 + tr);
+        Vector2 ibr = new Vector2(x1 - br, y1 - br);
+        Vector2 ibl = new Vector2(x0 + bl, y1 - bl);
 
-        AddTriangle(r, b, (ushort)(b + 1), (ushort)(b + 3));
-        AddTriangle(r, (ushort)(b + 1), (ushort)(b + 2), (ushort)(b + 3));
+        ushort cTl = (ushort)r.VertexCount;
+        AddVertex(r, itl.X, itl.Y, vc, Uv(rect, textured, itl.X, itl.Y));
+        ushort cTr = (ushort)r.VertexCount;
+        AddVertex(r, itr.X, itr.Y, vc, Uv(rect, textured, itr.X, itr.Y));
+        ushort cBr = (ushort)r.VertexCount;
+        AddVertex(r, ibr.X, ibr.Y, vc, Uv(rect, textured, ibr.X, ibr.Y));
+        ushort cBl = (ushort)r.VertexCount;
+        AddVertex(r, ibl.X, ibl.Y, vc, Uv(rect, textured, ibl.X, ibl.Y));
 
-        // Rounded corners as triangle fans.
-        float step = (MathF.PI / 2f) / numCircleSegments;
-        for (int i = 0; i < numCircleSegments; i++)
+        AddTriangle(r, cTl, cTr, cBl);
+        AddTriangle(r, cTr, cBr, cBl);
+
+        // Corner fans, each with its own radius.
+        AppendCornerFan(r, cTl, itl, tl, 180f, 270f, vc, rect, textured, numSegments);
+        AppendCornerFan(r, cTr, itr, tr, 270f, 360f, vc, rect, textured, numSegments);
+        AppendCornerFan(r, cBr, ibr, br, 0f, 90f, vc, rect, textured, numSegments);
+        AppendCornerFan(r, cBl, ibl, bl, 90f, 180f, vc, rect, textured, numSegments);
+
+        // Edge quads (top, right, bottom, left).
+        AppendEdge(r, cTl, cTr, new Vector2(x0 + tl, y0), new Vector2(x1 - tr, y0), vc, rect, textured);
+        AppendEdge(r, cTr, cBr, new Vector2(x1, y0 + tr), new Vector2(x1, y1 - br), vc, rect, textured);
+        AppendEdge(r, cBr, cBl, new Vector2(x1 - br, y1), new Vector2(x0 + bl, y1), vc, rect, textured);
+        AppendEdge(r, cBl, cTl, new Vector2(x0, y1 - bl), new Vector2(x0, y0 + tl), vc, rect, textured);
+    }
+
+    private static void AppendCornerFan(FNA_ClayDeviceResources r, ushort centerIndex, Vector2 center, float radius, float startAngleDeg, float endAngleDeg, Color color, in Clay_BoundingBox rect, bool textured, int numSegments)
+    {
+        if (radius <= 0f)
         {
-            float angle1 = i * step;
-            float angle2 = (i + 1f) * step;
-
-            for (int j = 0; j < 4; j++)
-            {
-                float cx, cy, sx, sy;
-                switch (j)
-                {
-                    case 0: cx = x0 + clampedRadius; cy = y0 + clampedRadius; sx = -1; sy = -1; break; // TL
-                    case 1: cx = x1 - clampedRadius; cy = y0 + clampedRadius; sx = 1; sy = -1; break; // TR
-                    case 2: cx = x1 - clampedRadius; cy = y1 - clampedRadius; sx = 1; sy = 1; break; // BR
-                    default: cx = x0 + clampedRadius; cy = y1 - clampedRadius; sx = -1; sy = 1; break; // BL
-                }
-
-                float p1x = cx + MathF.Cos(angle1) * clampedRadius * sx;
-                float p1y = cy + MathF.Sin(angle1) * clampedRadius * sy;
-                float p2x = cx + MathF.Cos(angle2) * clampedRadius * sx;
-                float p2y = cy + MathF.Sin(angle2) * clampedRadius * sy;
-
-                ushort i1 = (ushort)r.VertexCount;
-                AddVertex(r, p1x, p1y, vc, Uv(rect, textured, p1x, p1y));
-                ushort i2 = (ushort)r.VertexCount;
-                AddVertex(r, p2x, p2y, vc, Uv(rect, textured, p2x, p2y));
-
-                AddTriangle(r, (ushort)(b + j), i1, i2);
-            }
+            return;
         }
 
-        // Edge rectangles (top, right, bottom, left), each tied to the center rect.
-        ushort topTL = (ushort)r.VertexCount;
-        AddVertex(r, x0 + clampedRadius, y0, vc, Uv(rect, textured, x0 + clampedRadius, y0));
-        ushort topTR = (ushort)r.VertexCount;
-        AddVertex(r, x1 - clampedRadius, y0, vc, Uv(rect, textured, x1 - clampedRadius, y0));
-        AddTriangle(r, b, topTL, topTR);
-        AddTriangle(r, (ushort)(b + 1), b, topTR);
+        float radStart = startAngleDeg * MathF.PI / 180f;
+        float radEnd = endAngleDeg * MathF.PI / 180f;
+        float step = (radEnd - radStart) / numSegments;
 
-        ushort rightT = (ushort)r.VertexCount;
-        AddVertex(r, x1, y0 + clampedRadius, vc, Uv(rect, textured, x1, y0 + clampedRadius));
-        ushort rightB = (ushort)r.VertexCount;
-        AddVertex(r, x1, y1 - clampedRadius, vc, Uv(rect, textured, x1, y1 - clampedRadius));
-        AddTriangle(r, (ushort)(b + 1), rightT, rightB);
-        AddTriangle(r, (ushort)(b + 2), (ushort)(b + 1), rightB);
+        ushort prev = 0;
+        for (int i = 0; i <= numSegments; i++)
+        {
+            float angle = radStart + i * step;
+            float px = center.X + MathF.Cos(angle) * radius;
+            float py = center.Y + MathF.Sin(angle) * radius;
 
-        ushort bottomR = (ushort)r.VertexCount;
-        AddVertex(r, x1 - clampedRadius, y1, vc, Uv(rect, textured, x1 - clampedRadius, y1));
-        ushort bottomL = (ushort)r.VertexCount;
-        AddVertex(r, x0 + clampedRadius, y1, vc, Uv(rect, textured, x0 + clampedRadius, y1));
-        AddTriangle(r, (ushort)(b + 2), bottomR, bottomL);
-        AddTriangle(r, (ushort)(b + 3), (ushort)(b + 2), bottomL);
+            ushort idx = (ushort)r.VertexCount;
+            AddVertex(r, px, py, color, Uv(rect, textured, px, py));
 
-        ushort leftB = (ushort)r.VertexCount;
-        AddVertex(r, x0, y1 - clampedRadius, vc, Uv(rect, textured, x0, y1 - clampedRadius));
-        ushort leftT = (ushort)r.VertexCount;
-        AddVertex(r, x0, y0 + clampedRadius, vc, Uv(rect, textured, x0, y0 + clampedRadius));
-        AddTriangle(r, (ushort)(b + 3), leftB, leftT);
-        AddTriangle(r, b, (ushort)(b + 3), leftT);
+            if (i > 0)
+            {
+                AddTriangle(r, centerIndex, prev, idx);
+            }
+
+            prev = idx;
+        }
+    }
+
+    private static void AppendEdge(FNA_ClayDeviceResources r, ushort innerA, ushort innerB, Vector2 outerA, Vector2 outerB, Color color, in Clay_BoundingBox rect, bool textured)
+    {
+        ushort oa = (ushort)r.VertexCount;
+        AddVertex(r, outerA.X, outerA.Y, color, Uv(rect, textured, outerA.X, outerA.Y));
+        ushort ob = (ushort)r.VertexCount;
+        AddVertex(r, outerB.X, outerB.Y, color, Uv(rect, textured, outerB.X, outerB.Y));
+
+        AddTriangle(r, innerA, innerB, ob);
+        AddTriangle(r, innerA, ob, oa);
     }
 
     /// <summary>
@@ -468,7 +472,7 @@ public class FNA_Clay
                         FlushGeometry(device, r); // switch to solid-color batch
                     }
 
-                    AppendRoundedRect(r, bb, rcmd.renderData.rectangle.cornerRadius.topLeft, ToColor(rcmd.renderData.rectangle.backgroundColor), false);
+                    AppendRoundedRect(r, bb, rcmd.renderData.rectangle.cornerRadius, ToColor(rcmd.renderData.rectangle.backgroundColor), false);
                     if (r.VertexCount >= MAX_BATCH_VERTICES)
                     {
                         FlushGeometry(device, r);
@@ -557,7 +561,7 @@ public class FNA_Clay
                                 r.BatchTexture = texture;
                             }
 
-                            AppendRoundedRect(r, bb, ic.cornerRadius.topLeft, Color.White, true);
+                            AppendRoundedRect(r, bb, ic.cornerRadius, Color.White, true);
                             if (r.VertexCount >= MAX_BATCH_VERTICES)
                             {
                                 FlushGeometry(device, r);
