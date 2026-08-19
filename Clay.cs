@@ -2238,6 +2238,15 @@ public static partial class Clay
 
                 MeasuredWord measuredWord = context.MeasuredWords.InternalArray[wordIndex];
                 // Only word on the line is too large, just render it anyway.
+#if CLAY_INCLUDE_LETTER_SPACING_FIX
+                if (lineLengthChars == 0 && lineWidth + measuredWord.Width - element.TextConfig.LetterSpacing > element.Dimensions.Width)
+                {
+                    context.WrappedTextLines.Add(new WrappedTextLine
+                    {
+                        Dimensions = new Dimensions { Width = measuredWord.Width - element.TextConfig.LetterSpacing, Height = lineHeight },
+                        Line = new StringSegment(textElementData.Text, measuredWord.StartOffset, measuredWord.Length),
+                    });
+#else
                 if (lineLengthChars == 0 && lineWidth + measuredWord.Width > element.Dimensions.Width)
                 {
                     context.WrappedTextLines.Add(new WrappedTextLine
@@ -2245,21 +2254,34 @@ public static partial class Clay
                         Dimensions = new Dimensions { Width = measuredWord.Width, Height = lineHeight },
                         Line = new StringSegment(textElementData.Text, measuredWord.StartOffset, measuredWord.Length),
                     });
+#endif
                     textElementData.WrappedLines.Length++;
                     wordIndex = measuredWord.Next;
                     lineStartOffset = measuredWord.StartOffset + measuredWord.Length;
                 }
                 // measuredWord.length == 0 means a newline character.
+#if CLAY_INCLUDE_LETTER_SPACING_FIX
+                else if (measuredWord.Length == 0 || lineWidth + measuredWord.Width - element.TextConfig.LetterSpacing > element.Dimensions.Width)
+#else
                 else if (measuredWord.Length == 0 || lineWidth + measuredWord.Width > element.Dimensions.Width)
+#endif
                 {
                     bool finalCharIsSpace = textElementData.Text[Math.Max(lineStartOffset + lineLengthChars - 1, 0)] == ' ';
                     // Clamp to 0 to avoid a negative-length StringSegment in a pathological case.
                     int lineLength = Math.Max(lineLengthChars + (finalCharIsSpace ? -1 : 0), 0);
+#if CLAY_INCLUDE_LETTER_SPACING_FIX
+                    context.WrappedTextLines.Add(new WrappedTextLine
+                    {
+                        Dimensions = new Dimensions { Width = lineWidth + (finalCharIsSpace ? -spaceWidth : 0) - (lineLengthChars > 0 ? element.TextConfig.LetterSpacing : 0), Height = lineHeight },
+                        Line = new StringSegment(textElementData.Text, lineStartOffset, lineLength),
+                    });
+#else
                     context.WrappedTextLines.Add(new WrappedTextLine
                     {
                         Dimensions = new Dimensions { Width = lineWidth + (finalCharIsSpace ? -spaceWidth : 0), Height = lineHeight },
                         Line = new StringSegment(textElementData.Text, lineStartOffset, lineLength),
                     });
+#endif
                     textElementData.WrappedLines.Length++;
                     if (lineLengthChars == 0 || measuredWord.Length == 0)
                     {
@@ -2271,7 +2293,11 @@ public static partial class Clay
                 }
                 else
                 {
+#if CLAY_INCLUDE_LETTER_SPACING_FIX
+                    lineWidth += measuredWord.Width;
+#else
                     lineWidth += measuredWord.Width + element.TextConfig.LetterSpacing;
+#endif
                     lineLengthChars += measuredWord.Length;
                     wordIndex = measuredWord.Next;
                 }
@@ -2534,7 +2560,11 @@ public static partial class Clay
                             for (int i = 0; i < context.ScrollContainerDatas.Length; i++)
                             {
                                 ScrollContainerDataInternal mapping = context.ScrollContainerDatas.InternalArray[i];
+#if CLAY_INCLUDE_SCROLL_JUMP_FIX
+                                if (mapping.ElementId == currentElement.Id)
+#else
                                 if (mapping.LayoutElement == currentElement)
+#endif
                                 {
                                     scrollOffset = currentElement.Config.Clip.ChildOffset;
                                     if (context.ExternalScrollHandlingEnabled)
@@ -2640,11 +2670,23 @@ public static partial class Clay
                         // This exists because the scissor needs to end _after_ borders between elements.
                         if (closeClipElement)
                         {
+#if CLAY_INCLUDE_SCISSOR_END_FIX
+                            ref LayoutElementHashMapItem currentElementData1 = ref __GetHashMapItem(currentElement.Id);
+                            BoundingBox currentElementBoundingBox1 = currentElementData1.BoundingBox;
+                            if (!__ElementIsOffscreen(in currentElementBoundingBox1)) {
+                                __AddRenderCommand(new RenderCommand
+                                {
+                                    Id = __HashNumber(currentElement.Id, (uint)(rootElement.Children.Length + 11)).Id,
+                                    CommandType = RenderCommandType.ScissorEnd,
+                                });
+                            }
+#else
                             __AddRenderCommand(new RenderCommand
                             {
                                 Id = __HashNumber(currentElement.Id, (uint)(rootElement.Children.Length + 11)).Id,
                                 CommandType = RenderCommandType.ScissorEnd,
                             });
+#endif
                         }
                     }
 
@@ -2703,7 +2745,11 @@ public static partial class Clay
                         for (int i = 0; i < context.ScrollContainerDatas.Length; i++)
                         {
                             ref ScrollContainerDataInternal mapping = ref context.ScrollContainerDatas.InternalArray[i];
+#if CLAY_INCLUDE_SCROLL_JUMP_FIX
+                            if (mapping.ElementId == currentElement.Id)
+#else
                             if (mapping.LayoutElement == currentElement)
+#endif
                             {
                                 scrollContainerData = ref mapping;
                                 mapping.BoundingBox = currentElementBoundingBox;
@@ -3036,7 +3082,8 @@ public static partial class Clay
             context.MeasureTextHashMap.InternalArray[i] = 0;
         }
         context.MeasureTextHashMapInternal.Length = 1; // Reserve the 0 value to mean "no next element".
-        context.LayoutDimensions = layoutDimensions;
+        // Fixed bug in the original clay: layoutDimensions is set twice
+        // context.LayoutDimensions = layoutDimensions;
         return context;
     }
 
