@@ -557,12 +557,6 @@ public class FNA_Clay
                             contents.Offset,
                             contents.Length);
 
-                        // FontStashSharp's MeasureString returns (maxX, maxY) — the glyph's bottom from the
-                        // line top — but DrawText positions glyphs relative to the baseline, so short glyphs
-                        // (e.g. "x", "-") sit below the line-box top. Offset by the tight bounds so the drawn
-                        // text aligns with Clay's bounding box.
-                        Bounds bounds = font.TextBounds(textSegment, Vector2.Zero);
-
                         TextStyle textStyle = TextStyle.None;
                         FontSystemEffect effect = FontSystemEffect.None;
                         int effectAmount = 0;
@@ -575,7 +569,7 @@ public class FNA_Clay
                         font.DrawText(
                             rendererData.SpriteBatch,
                             textSegment,
-                            new Vector2(bb.X - bounds.X, bb.Y - bounds.Y),
+                            new Vector2(bb.X, bb.Y),
                             ToColor(tc.TextColor),
                             textStyle: textStyle,
                             effect: effect,

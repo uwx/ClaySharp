@@ -50,8 +50,9 @@ public class Game1 : Game
     private static Clay.Dimensions MeasureText(Microsoft.Extensions.Primitives.StringSegment text, Clay.TextElementConfig config, object? userData)
     {
         var fontSystem = (FontSystem)userData!;
-        Bounds bounds = fontSystem.GetFont(config.FontSize).TextBounds(text.AsSpan(), Vector2.Zero);
-        return new Clay.Dimensions(bounds.X2 - bounds.X, bounds.Y2 - bounds.Y);
+        var font = fontSystem.GetFont(config.FontSize);
+        Bounds bounds = font.TextBounds(text.AsSpan(), Vector2.Zero);
+        return new Clay.Dimensions(bounds.X2 - bounds.X, font.LineHeight);
     }
 
     private static void HandleClayErrors(Clay.ErrorData errorData) => Console.WriteLine(errorData.ErrorText);
