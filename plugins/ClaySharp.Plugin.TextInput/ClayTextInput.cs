@@ -114,15 +114,51 @@ public static class ClayTextInput
         // Passed verbatim to all four callbacks; may be null.
         public object? UserData;
     }
+    
+    /*
+        using (Clay.Element(state.ElementId, new Clay.ElementDeclaration
+               {
+                   Layout = new Clay.LayoutConfig
+                   {
+                       Sizing = cfg.Sizing,
+                       Padding = cfg.Padding,
+                       ChildAlignment = new Clay.ChildAlignment
+                       {
+                           Y = Clay.LayoutAlignmentY.Center
+                       },
+                   },
+                   BackgroundColor = cfg.ColorBackground,
+                   CornerRadius = cfg.CornerRadius,
+                   Floating = cfg.Floating,
+                   Border = new Clay.BorderElementConfig
+                   {
+                       Color = borderColor,
+                       Width = cfg.BorderWidth
+                   },
+               }))
+     */
+    public struct TextInputLayoutConfig
+    {
+        public Clay.Sizing Sizing; // FIT / GROW / PERCENT / FIXED sizing inside the parent container.
+        public Clay.Padding Padding; // "padding" in pixels, a gap between this element's bounding box and its children.
+        public ushort ChildGap; // The gap in pixels between child elements along the layout axis.
+    }
 
     // Passed to ClayTextInput.TextInput() each frame (immediate-mode style), so
     // any field can change between frames — including toggling callbacks on/off.
     public struct TextInputConfig
     {
-        // Sizing & layout.
-        public Clay.Sizing Sizing;
-        public Clay.Padding Padding;
-
+        public TextInputLayoutConfig Layout; // Controls the size and position of an element and its children.
+        public Clay.Color BackgroundColor; // Background color; generates a RECTANGLE render command (or is passed to IMAGE/CUSTOM).
+        public Clay.Color OverlayColor; // "Color Overlay" applied to this element and all its children.
+        public Clay.CornerRadiusValues CornerRadius; // Corner rounding of rectangles, borders and images.
+        public Clay.AspectRatioElementConfig AspectRatio; // Aspect ratio scaling.
+        public Clay.FloatingElementConfig Floating; // Floating / absolute positioning settings.
+        public Clay.ClipElementConfig Clip; // Clip / scroll settings.
+        public Clay.BorderElementConfig Border; // Border settings.
+        public Clay.TransitionElementConfig Transition; // Transition settings.
+        public object? UserData; // Transparently passed through to resulting render commands.
+        
         // Text.
         public Clay.TextElementConfig TextConfig;
         // Shown when the buffer is empty and the element is unfocused. Null or
@@ -132,19 +168,10 @@ public static class ClayTextInput
         public bool PasswordMode;
 
         // Colours (RGBA 0–255).
-        public Clay.Color ColorPlaceholder;
-        public Clay.Color ColorBackground;
-        public Clay.Color ColorBorder;
-        public Clay.Color ColorBorderFocus;
-        public Clay.Color ColorSelection;
-        public Clay.Color ColorCursor;
-
-        // Shape.
-        public Clay.CornerRadiusValues CornerRadius;
-        public Clay.BorderWidth BorderWidth;
-
-        // Extra layout.
-        public Clay.FloatingElementConfig Floating;
+        public Clay.Color PlaceholderColor;
+        public Clay.Color BorderFocusColor;
+        public Clay.Color SelectionColor;
+        public Clay.Color CursorColor;
 
         // Behaviour.
         // Maximum codepoints; 0 = unlimited.
@@ -190,17 +217,17 @@ public static class ClayTextInput
         public bool CursorVisible = true;
 
         // Internal.
-        public bool IsDynamic;
-        public Clay.ElementId ElementId;
+        internal bool IsDynamic;
+        internal Clay.ElementId ElementId;
         // Display scratch string (password-masked when enabled).
-        public string CalcText = "";
+        internal string CalcText = "";
         // Cached copy of the most recent TextInputConfig so OnChar / OnKey
         // can read the callbacks without extra arguments.
-        public TextInputConfig Cfg;
-        public ulong LastClickFrame;
-        public bool LastClickWasDouble;
-        public bool DragSelecting;
-        public int DragAnchor;
+        internal TextInputConfig Cfg;
+        internal ulong LastClickFrame;
+        internal bool LastClickWasDouble;
+        internal bool DragSelecting;
+        internal int DragAnchor;
     }
 
     // -----------------------------------------
@@ -491,7 +518,7 @@ public static class ClayTextInput
                     int clickPos = state.CursorPos;
                     if (elementData.Found)
                     {
-                        float clickX = pointerData.Position.X - elementData.BoundingBox.X - cfg.Padding.Left;
+                        float clickX = pointerData.Position.X - elementData.BoundingBox.X - cfg.Layout.Padding.Left;
                         hasClickPos = ByteAtXIfInBounds(state, cfg, clickX, out clickPos);
                     }
 
@@ -519,7 +546,7 @@ public static class ClayTextInput
             Clay.ElementData elementData = Clay.GetElementData(state.ElementId);
             if (elementData.Found)
             {
-                float dragX = pointerData.Position.X - elementData.BoundingBox.X - cfg.Padding.Left;
+                float dragX = pointerData.Position.X - elementData.BoundingBox.X - cfg.Layout.Padding.Left;
                 int dragPos = ByteAtX(state, cfg, dragX);
                 state.CursorPos = dragPos;
                 state.SelectionAnchor = (dragPos == state.DragAnchor) ? -1 : state.DragAnchor;
@@ -545,20 +572,76 @@ public static class ClayTextInput
             _platform.ResetCursor(_platform.UserData);
         }
 
-        Clay.Color borderColor = state.Focused ? cfg.ColorBorderFocus : cfg.ColorBorder;
-
+        Clay.Color borderColor = state.Focused ? cfg.BorderFocusColor : cfg.Border.Color;
+        
+        // public struct TextInputConfig
+        // {
+        //     public TextInputLayoutConfig Layout; // Controls the size and position of an element and its children.
+        //     public Clay.Color BackgroundColor; // Background color; generates a RECTANGLE render command (or is passed to IMAGE/CUSTOM).
+        //     public Clay.Color OverlayColor; // "Color Overlay" applied to this element and all its children.
+        //     public Clay.CornerRadiusValues CornerRadius; // Corner rounding of rectangles, borders and images.
+        //     public Clay.AspectRatioElementConfig AspectRatio; // Aspect ratio scaling.
+        //     public Clay.FloatingElementConfig Floating; // Floating / absolute positioning settings.
+        //     public Clay.ClipElementConfig Clip; // Clip / scroll settings.
+        //     public Clay.BorderElementConfig Border; // Border settings.
+        //     public Clay.TransitionElementConfig Transition; // Transition settings.
+        //     public object? UserData; // Transparently passed through to resulting render commands.
+        //     
+        //     // Text.
+        //     public Clay.TextElementConfig TextConfig;
+        //     // Shown when the buffer is empty and the element is unfocused. Null or
+        //     // empty disables the placeholder.
+        //     public string? Placeholder;
+        //     // Render '*' per codepoint.
+        //     public bool PasswordMode;
+        //
+        //     // Colours (RGBA 0–255).
+        //     public Clay.Color PlaceholderColor;
+        //     public Clay.Color BorderColor;
+        //     public Clay.Color BorderFocusColor;
+        //     public Clay.Color SelectionColor;
+        //     public Clay.Color CursorColor;
+        //
+        //     // Behaviour.
+        //     // Maximum codepoints; 0 = unlimited.
+        //     public int MaxLength;
+        //     // Cursor blink half-period in seconds; 0 → default 0.53 s.
+        //     public float CursorBlinkPeriod;
+        //
+        //     // Callbacks (all optional; NULL disables).
+        //     // Dynamic buffer growth — unused in the managed port (strings grow
+        //     // automatically); retained for API parity.
+        //     public ResizeFn? OnResize;
+        //     public object? ResizeUserData;
+        //     // Per-character filter; NULL → accept all.
+        //     public CharFilterFn? OnCharFilter;
+        //     public object? CharFilterUserData;
+        //     // Post-edit notification.
+        //     public ChangedFn? OnChanged;
+        //     public object? ChangedUserData;
+        // }
+        
         using (Clay.Element(state.ElementId, new Clay.ElementDeclaration
                {
                    Layout = new Clay.LayoutConfig
                    {
-                       Sizing = cfg.Sizing,
-                       Padding = cfg.Padding,
-                       ChildAlignment = new Clay.ChildAlignment { Y = Clay.LayoutAlignmentY.Center },
+                       Sizing = cfg.Layout.Sizing,
+                       Padding = cfg.Layout.Padding,
+                       ChildGap = cfg.Layout.ChildGap,
+                       ChildAlignment = new Clay.ChildAlignment
+                       {
+                           Y = Clay.LayoutAlignmentY.Center
+                       },
                    },
-                   BackgroundColor = cfg.ColorBackground,
+                   BackgroundColor = cfg.BackgroundColor,
+                   OverlayColor = cfg.OverlayColor,
                    CornerRadius = cfg.CornerRadius,
+                   AspectRatio = cfg.AspectRatio,
                    Floating = cfg.Floating,
-                   Border = new Clay.BorderElementConfig { Color = borderColor, Width = cfg.BorderWidth },
+                   Clip = cfg.Clip,
+                   Border = cfg.Border with { Color = borderColor },
+                   Transition = cfg.Transition,
+                   UserData = cfg.UserData
                }))
         {
             const string testWidthChar = " ";
@@ -566,7 +649,7 @@ public static class ClayTextInput
             float cursorH = cfg.TextConfig.FontSize;
             const float cursorW = 2.0f;
 
-            float textOffsetX = cfg.Padding.Left;
+            float textOffsetX = cfg.Layout.Padding.Left;
             float cursorX = 0f;
             float selectionX = 0f;
             float selectionW = 0f;
@@ -590,7 +673,7 @@ public static class ClayTextInput
             if (state.TextLen == 0 && !string.IsNullOrEmpty(cfg.Placeholder) && !state.Focused)
             {
                 Clay.TextElementConfig placeholderConfig = cfg.TextConfig;
-                placeholderConfig.TextColor = cfg.ColorPlaceholder;
+                placeholderConfig.TextColor = cfg.PlaceholderColor;
                 Clay.Text(cfg.Placeholder, placeholderConfig);
             }
             else
@@ -606,7 +689,7 @@ public static class ClayTextInput
                     using (Clay.AutoId(new Clay.ElementDeclaration
                            {
                                Layout = new Clay.LayoutConfig { Sizing = new Clay.Sizing { Width = Clay.SizingFixed(selectionW), Height = Clay.SizingFixed(cursorH) } },
-                               BackgroundColor = cfg.ColorSelection,
+                               BackgroundColor = cfg.SelectionColor,
                                Floating = new Clay.FloatingElementConfig
                                {
                                    Offset = new Vector2(textOffsetX + selectionX + visualXBias, 0),
@@ -625,7 +708,7 @@ public static class ClayTextInput
                     using (Clay.AutoId(new Clay.ElementDeclaration
                            {
                                Layout = new Clay.LayoutConfig { Sizing = new Clay.Sizing { Width = Clay.SizingFixed(cursorW), Height = Clay.SizingFixed(cursorH) } },
-                               BackgroundColor = cfg.ColorCursor,
+                               BackgroundColor = cfg.CursorColor,
                                Floating = new Clay.FloatingElementConfig
                                {
                                    Offset = new Vector2(textOffsetX + cursorX + 0.5f, 0),

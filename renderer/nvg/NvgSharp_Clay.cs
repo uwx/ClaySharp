@@ -66,8 +66,8 @@ public static class Nvg_Clay
         }
     }
 
-    public delegate void ImageRenderHandler(ref Clay.ImageRenderData data);
-    public delegate void CustomRenderHandler(ref Clay.CustomRenderData data);
+    public delegate void ImageRenderHandler(ref Clay.RenderCommand data);
+    public delegate void CustomRenderHandler(ref Clay.RenderCommand data);
     public delegate FontSystem FontGetHandler(ref Clay.TextRenderData data, object? userData);
 
     private const float DegToRad = MathF.PI / 180f;
@@ -296,7 +296,7 @@ public static class Nvg_Clay
                             }
                             else
                             {
-                                rendererData.ImageRenderer?.Invoke(ref ic);
+                                rendererData.ImageRenderer?.Invoke(ref rcmd);
                             }
                         }
                     }
@@ -304,7 +304,7 @@ public static class Nvg_Clay
                     break;
 
                 case Clay.RenderCommandType.Custom:
-                    rendererData.CustomRenderer?.Invoke(ref rcmd.RenderData.Custom);
+                    rendererData.CustomRenderer?.Invoke(ref rcmd);
                     break;
 
                 default:

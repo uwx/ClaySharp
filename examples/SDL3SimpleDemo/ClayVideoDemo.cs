@@ -139,8 +139,11 @@ public static class ClayVideoDemo
 
         ClayTextInput.TextInputConfig textInputConfig = new ClayTextInput.TextInputConfig
         {
-            Sizing = new Clay.Sizing { Width = Clay.SizingFixed(260), Height = Clay.SizingFixed(40) },
-            Padding = Clay.PaddingAll(8),
+            Layout = new ClayTextInput.TextInputLayoutConfig()
+            {
+                Sizing = new Clay.Sizing { Width = Clay.SizingFixed(260), Height = Clay.SizingFixed(40) },
+                Padding = Clay.PaddingAll(8),
+            },
             TextConfig = new Clay.TextElementConfig
             {
                 FontId = FONT_ID_BODY_16,
@@ -148,14 +151,17 @@ public static class ClayVideoDemo
                 TextColor = COLOR_WHITE,
             },
             Placeholder = "Search…",
-            ColorBackground = new Clay.Color(50, 50, 55, 255),
-            ColorBorder = new Clay.Color(90, 90, 95, 255),
-            ColorBorderFocus = new Clay.Color(100, 160, 255, 255),
-            ColorPlaceholder = new Clay.Color(150, 150, 150, 255),
-            ColorSelection = new Clay.Color(60, 120, 210, 160),
-            ColorCursor = new Clay.Color(220, 220, 220, 255),
+            BackgroundColor = new Clay.Color(50, 50, 55, 255),
+            BorderFocusColor = new Clay.Color(100, 160, 255, 255),
+            PlaceholderColor = new Clay.Color(150, 150, 150, 255),
+            SelectionColor = new Clay.Color(60, 120, 210, 160),
+            CursorColor = new Clay.Color(220, 220, 220, 255),
             CornerRadius = Clay.CornerRadius(6),
-            BorderWidth = Clay.BorderAll(1),
+            Border = new Clay.BorderElementConfig()
+            {
+                Width = Clay.BorderAll(1),
+                Color = new Clay.Color(90, 90, 95, 255),
+            }
         };
 
         using (Clay.Element(Clay.Id("OuterContainer"), new Clay.ElementDeclaration
